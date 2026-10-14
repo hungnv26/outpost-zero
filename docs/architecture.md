@@ -1,5 +1,11 @@
 # Architecture
 
+> Outpost Zero adds, on top of this Agent RTS architecture, the colony economy (`adapter/src/economy.ts`,
+> [economy.md](economy.md) §13 for the contract additions), the map's economy kinds (`layout.ts`),
+> the Arena referee and API (`arena.ts`, `arena-server.ts`, [arena.md](arena.md) §8a–8b), the
+> Governor client and MOTHER's voice (`sources/hermes-governor.ts`), the Mission Control lobby in
+> the sink, and the `colony_*` tools in the Hermes plugin. The three foundations stay unmodified.
+
 ```
                  ┌──────────── game (Godot 4, fork of Open RTS) ────────────┐
    player ─────▶ │ command bar · approvals · roster · results               │

@@ -192,7 +192,15 @@ the spec: one base per window with the full scoreboard, not all bases on one map
 - **Done when:** two local-model teams finish a Race to Awakening with a winner, a replay and
   an Elo update; then one frontier-model team beats the local model in the same match.
 
-### Phase 6: Story, Chapters I and II (3 sessions)
+### Phase 6: Story, Chapters I and II (3 sessions) — DONE 2026-10-15
+
+Evidence: a fresh campaign on the local model held a food and water surplus for nine sols; the
+Scout's next real trip came back with the artifact nobody ordered, which opened Chapter II by the
+economic gate; the Chapter II card offered Exploit, Contain and Communicate in the HUD
+(`docs/screenshots/story-card.jpg`), MOTHER retold it in its own words through the Archivist
+agent, and Contain raised trust by 10 and left the Excavation Site gated. Events roll from the
+seed: the dust storm, the reactor fault and its fire, illness, unordered tasks and refusals each
+showed up as cards with MOTHER's narration in play-testing. 36 adapter tests pass.
 
 - Chapter state and story cards (short, in the HUD, no cutscenes); the Chapter I twist (the
   unordered expedition that returns with an artifact); Chapter II gate and the three paths with
@@ -203,7 +211,14 @@ the spec: one base per window with the full scoreboard, not all bases on one map
 - **Done when:** a fresh campaign reaches Chapter II by the economic gate and each path
   visibly changes the numbers and the machines' behaviour.
 
-### Phase 7: Version 1 release (2 sessions)
+### Phase 7: Version 1 release (2 sessions) — DONE 2026-10-15
+
+Evidence: README rewritten for Outpost Zero with the campaign, the Arena, the quick start, the
+repository layout, known limitations and licences; screenshots for every visible feature in
+`docs/screenshots/`; a recorded match as the trailer (`arena-trailer.gif`, 14 frames of team B's
+window); settings and render-scale options inherited from Agent RTS; public repository
+`hungnv26/outpost-zero`. First-run flow is `scripts/setup.sh` then `scripts/start.sh`, as
+verified in Phase 0.
 
 - Settings, performance on 4K and 5K, first-run flow, README rewrite with screenshots, licences
   for new assets, public repository, a recorded two-team match as the trailer.

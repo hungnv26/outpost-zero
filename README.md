@@ -29,6 +29,8 @@ about Earth and the four endings are written in [docs/story.md](docs/story.md) a
 The faster, smarter model wins: the clock never waits, and every team gets the same token
 budget. [docs/arena.md](docs/arena.md).
 
+![A recorded match: team B's window over six sols, the Governor acting through the colony tools](docs/screenshots/arena-trailer.gif)
+
 | The colony strip | Build mode | Two teams |
 |---|---|---|
 | ![Power, water, food, materials, parts, medicine, colonists, data, compute, trust and influence, live](docs/screenshots/colony-strip.jpg) | ![The catalog with costs, and research tiers bought with data](docs/screenshots/build-mode.jpg) | ![Team B's window with both teams on the scoreboard](docs/screenshots/arena-two-teams.jpg) |
