@@ -1,0 +1,5 @@
+# Default local model (shared with Agent RTS, same Ollama tag): qwen3 4B instruct (no thinking mode) with a 16K context.
+# Hermes sends multi-step agent transcripts that overflow Ollama's 4K default.
+#   ollama create agentrts-qwen3 -f infra/ollama/Modelfile
+FROM qwen3:4b-instruct
+PARAMETER num_ctx 16384

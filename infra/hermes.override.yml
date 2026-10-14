@@ -1,0 +1,53 @@
+# Layered on top of vendor/hermes-synapse/docker-compose.yml (vendor files stay untouched).
+#   docker compose -p outpostzero -f vendor/hermes-synapse/docker-compose.yml -f infra/hermes.override.yml up -d
+services:
+  backend:
+    container_name: outpostzero-hermes
+    ports: !override
+      - "127.0.0.1:8101:8000" # 8101 on the host (Agent RTS uses 8100): 8000 is a common dev port
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+    # Upstream also mounts /var/run/docker.sock. No production code uses it, and with the
+    # LLM-callable execute_command tool it would hand the model root on the Docker VM. Dropped.
+    volumes: !override
+      - ./backend:/app/backend
+      - ./hermes_sdk:/app/hermes_sdk
+      - ./scripts:/app/scripts
+      - ./.env:/app/.env:ro # agents' shell commands run in the sandbox (plugin.py), and nothing may rewrite keys
+      - sandbox_data:/app/backend/data/sandbox
+      - ${OUTPOST_ZERO_ROOT:-../..}/infra/hermes-plugin:/app/backend/agentrts:ro
+    depends_on:
+      searxng:
+        condition: service_started
+
+  # Hermes' own React dashboard is optional; the game + Mission Control replace it.
+  frontend:
+    container_name: outpostzero-hermes-dashboard
+    profiles: ["hermes-dashboard"]
+    ports: !override
+      - "127.0.0.1:9120:80" # upstream binds every interface
+
+  db:
+    container_name: outpostzero-hermes-db
+    ports: !reset []
+
+  qdrant:
+    container_name: outpostzero-hermes-qdrant
+    ports: !reset []
+
+  sandbox:
+    container_name: outpostzero-hermes-sandbox
+    networks:
+      sandbox-net:
+        aliases: ["jarvis-sandbox"] # hardcoded in backend/subagents.py
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: outpostzero-searxng
+    restart: unless-stopped
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+    volumes:
+      - ${OUTPOST_ZERO_ROOT:-../..}/infra/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - hermes-net

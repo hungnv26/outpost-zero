@@ -1,0 +1,71 @@
+[gd_scene load_steps=14 format=3]
+
+[ext_resource type="PackedScene" path="res://source/match/Match.tscn" id="1_match"]
+[ext_resource type="Script" path="res://source/agent/AgentMatch.gd" id="2_script"]
+[ext_resource type="Script" path="res://source/data-model/MatchSettings.gd" id="3_settings"]
+[ext_resource type="PackedScene" path="res://source/agent/AgentMap.tscn" id="4_map"]
+[ext_resource type="PackedScene" path="res://source/match/players/human/Human.tscn" id="5_human"]
+[ext_resource type="Shader" path="res://source/shaders/2d/white_transparent.gdshader" id="6_white"]
+[ext_resource type="Shader" path="res://source/shaders/3d/simple_fog_of_war.gdshader" id="7_fow"]
+
+[sub_resource type="Resource" id="Resource_settings"]
+script = ExtResource("3_settings")
+players = Array[Resource]([])
+visibility = 2
+visible_player = 0
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_fow"]
+viewport_path = NodePath("FogOfWar/CombinedViewport")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_fow"]
+resource_local_to_scene = true
+render_priority = 1
+shader = ExtResource("7_fow")
+shader_parameter/color = Color(0, 0, 0, 1)
+shader_parameter/texture_units_per_world_unit = 2
+shader_parameter/debug_texture_view = false
+shader_parameter/world_visibility_texture = SubResource("ViewportTexture_fow")
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_mask"]
+viewport_path = NodePath("FogOfWar/CombinedViewport")
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_mask"]
+resource_local_to_scene = true
+shader = ExtResource("6_white")
+shader_parameter/reference_texture = SubResource("ViewportTexture_mask")
+
+[sub_resource type="ViewportTexture" id="ViewportTexture_minimap"]
+viewport_path = NodePath("HUD/MarginContainer/Minimap/MarginContainer/MinimapViewport")
+
+[node name="Match" instance=ExtResource("1_match")]
+script = ExtResource("2_script")
+settings = SubResource("Resource_settings")
+
+[node name="Map" parent="." index="0" instance=ExtResource("4_map")]
+
+[node name="Human" parent="Players" index="0" instance=ExtResource("5_human")]
+color = Color(0.4, 0.62, 0.95, 1)
+
+[node name="IsometricCamera3D" parent="."]
+transform = Transform3D(0.707107, -0.541675, 0.454519, 0, 0.642788, 0.766044, -0.707107, -0.541675, 0.454519, 39.8, 30, 39.8)
+size = 44.0
+size_min = 12
+size_max = 72
+expected_pitch_degrees = -50.0
+allow_rotation = false
+bounding_planes = Array[Plane]([Plane(1, 0, 0, 0), Plane(-1, 0, 0, -44), Plane(0, 0, 1, 0), Plane(0, 0, -1, -44)])
+
+[node name="ScreenOverlay" parent="FogOfWar" index="1"]
+visible = false
+material_override = SubResource("ShaderMaterial_fow")
+
+[node name="FogOfWarMask" parent="HUD/MarginContainer/Minimap/MarginContainer/MinimapViewport" index="3"]
+visible = false
+material = SubResource("ShaderMaterial_mask")
+
+[node name="MinimapTextureRect" parent="HUD/MarginContainer/Minimap/MarginContainer" index="1"]
+texture = SubResource("ViewportTexture_minimap")
+
+
+[node name="Fog" parent="."]
+visible = false

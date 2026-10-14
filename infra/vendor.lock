@@ -1,0 +1,5 @@
+# Pinned foundation commits. scripts/setup.sh clones these into vendor/ (gitignored).
+# name                 repo                                                   commit
+hermes-synapse         https://github.com/pauloberezini/hermes-synapse.git     fcfe934
+mission-control        https://github.com/builderz-labs/mission-control.git    e28edf8
+godot-open-rts         https://github.com/lampe-games/godot-open-rts.git       a628ad3

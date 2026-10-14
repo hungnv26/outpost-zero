@@ -1,0 +1,12 @@
+# Minimal SearXNG config: JSON API enabled for the Hermes web_search tool, no rate limiter
+# (only reachable on the internal docker network).
+use_default_settings: true
+server:
+  secret_key: "outpost-zero-local-only-not-a-secret"
+  limiter: false
+  image_proxy: false
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
