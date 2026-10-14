@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Base } from "../src/base.ts";
 import type { ServerMessage } from "../src/contract.ts";
-import { buildingForTool, cloneLayout, DEFAULT_LAYOUT, DEPARTMENTS, DISTRICTS, departmentOf, LayoutError, loadLayout, organiseLayout, upsertAgent, upsertBuilding } from "../src/layout.ts";
+import { buildingForTool, cloneLayout, DEFAULT_LAYOUT, DEPARTMENTS, DISTRICTS, departmentOf, homeOf, LayoutError, loadLayout, organiseLayout, upsertAgent, upsertBuilding } from "../src/layout.ts";
 import { FakeSource } from "../src/sources/fake.ts";
 import { HermesSource } from "../src/sources/hermes.ts";
 import { World } from "../src/world.ts";
@@ -26,7 +26,7 @@ function setup() {
 test("placing a building validates position and saves the base", async () => {
   const { world, base, path, msgs } = setup();
   await src_start(world);
-  await base.apply({ type: "layout.building.upsert", building: { label: "Data Mine", x: 28.7, z: 16.2, model: "hangar_smallA", color: "#aabbcc", capability: "code" } });
+  await base.apply({ type: "layout.building.upsert", building: { label: "Data Mine", kind: "scrapYard", x: 28.7, z: 16.2, model: "hangar_smallA", color: "#aabbcc" } });
   const b = world.layout.buildings.find((x) => x.label === "Data Mine")!;
   assert.equal(b.id, "data_mine");
   assert.equal(b.x, 28.5); // snapped to the half-unit grid
@@ -35,9 +35,10 @@ test("placing a building validates position and saves the base", async () => {
   assert.equal(JSON.parse(readFileSync(path, "utf8")).buildings.length, DEFAULT_LAYOUT.buildings.length + 1);
 
   await assert.rejects(
-    base.apply({ type: "layout.building.upsert", building: { label: "Too close", x: 18, z: 21 } }),
-    /Too close to Command Centre/,
+    base.apply({ type: "layout.building.upsert", building: { label: "Too close", kind: "storageDepot", x: 18, z: 21 } }),
+    /Too close to Command Core/,
   );
+  await assert.rejects(base.apply({ type: "layout.building.upsert", building: { label: "Fake", x: 5, z: 5 } }), /built from the catalog/);
   await assert.rejects(base.apply({ type: "layout.building.remove", id: "command_centre" }), /can be moved but not removed/);
 });
 
@@ -49,7 +50,7 @@ async function src_start(world: World) {
 test("custom characters join the world and get a turn in missions", async () => {
   const { world, base, src, msgs } = setup();
   await src.start(world);
-  await base.apply({ type: "layout.agent.upsert", agent: { name: "Market Watcher", job: "Tracks competitor pricing and product launches.", skill: "web", model: "craft_speederC", color: "#33ccaa", home: "research_lab" } });
+  await base.apply({ type: "layout.agent.upsert", agent: { name: "Market Watcher", job: "Tracks competitor pricing and product launches.", skill: "web", model: "craft_speederC", color: "#33ccaa", home: "landing_module" } });
   const a = world.layout.agents.find((x) => x.name === "Market Watcher")!;
   assert.equal(a.id, "market_watcher");
   assert.equal(a.hermesId, "rts_market_watcher");
@@ -65,7 +66,7 @@ test("custom characters join the world and get a turn in missions", async () => 
     }
   };
   await until(() => world.snapshot().approvals.some((p) => p.status === "pending"));
-  assert.ok(msgs.some((m) => m.type === "agent.state" && m.agent.id === "market_watcher" && m.agent.location === "research_lab"));
+  assert.ok(msgs.some((m) => m.type === "agent.state" && m.agent.id === "market_watcher" && m.agent.location === "landing_module"));
   await src.resolveApproval(world.snapshot().approvals[0].id, true);
   await until(() => world.getMission()?.status === "completed");
   await src.stop();
@@ -78,11 +79,13 @@ test("custom characters join the world and get a turn in missions", async () => 
 
 test("removing a building sends its agents home and reroutes tools", () => {
   const l = cloneLayout(DEFAULT_LAYOUT);
-  assert.equal(buildingForTool(l, "web_search"), "research_lab");
-  l.buildings = l.buildings.filter((b) => b.id !== "research_lab");
-  assert.equal(buildingForTool(l, "web_search"), null);
-  upsertBuilding(l, { label: "Observatory", x: 6, z: 8, capability: "research" });
+  assert.equal(buildingForTool(l, "web_search"), null); // the crash site has no lab
+  upsertBuilding(l, { label: "Observatory", x: 6, z: 8, kind: "researchLab" });
   assert.equal(buildingForTool(l, "web_search"), "observatory");
+  l.agents.find((a) => a.id === "researcher")!.home = "observatory";
+  l.buildings = l.buildings.filter((b) => b.id !== "observatory");
+  assert.equal(buildingForTool(l, "web_search"), null);
+  assert.equal(homeOf(l, "researcher"), "landing_module");
   assert.throws(() => upsertBuilding(l, { label: "" }), LayoutError);
 });
 
@@ -104,7 +107,7 @@ test("Hermes source creates and deletes sub-agents for custom characters", async
     const src = new HermesSource({ baseUrl: `http://127.0.0.1:${(http.address() as AddressInfo).port}`, token: "t" });
     await src.start(world);
     const l = cloneLayout(world.layout);
-    l.agents.push({ id: "watcher", name: "Watcher", hermesId: "rts_watcher", job: "Watches things closely.", skill: "web", model: "rover", color: "#ffffff", home: "research_lab" });
+    l.agents.push({ id: "watcher", name: "Watcher", hermesId: "rts_watcher", job: "Watches things closely.", skill: "web", model: "rover", color: "#ffffff", home: "landing_module" });
     await src.layoutChanged(l);
     const created = calls.find((c) => c.method === "POST" && c.body?.id === "rts_watcher")!;
     assert.equal(created.body.parent_id, "jarvis");
@@ -136,14 +139,14 @@ test("the base holds up to 32 buildings, 4.5 apart", () => {
     for (let x = 2; x <= l.size - 2; x += 0.5) {
       if (l.buildings.length >= 32) break;
       try {
-        upsertBuilding(l, { label: `Block ${n++}`, x, z, model: "Rocket" });
+        upsertBuilding(l, { label: `Block ${n++}`, kind: "storageDepot", x, z, model: "Rocket" });
       } catch (e) {
         if (!(e instanceof LayoutError) || !/Too close|at most/.test(e.message)) throw e;
       }
     }
   }
   assert.equal(l.buildings.length, 32);
-  assert.throws(() => upsertBuilding(l, { label: "One more", x: 5, z: 5 }), /at most 32/);
+  assert.throws(() => upsertBuilding(l, { label: "One more", kind: "storageDepot", x: 5, z: 5 }), /at most 32/);
 });
 
 test("up to 24 custom characters on top of the built-ins", () => {
@@ -161,8 +164,8 @@ function districtAt(x: number, z: number) {
 
 test("organise puts every building in its department's district, in department colours", () => {
   const l = cloneLayout(DEFAULT_LAYOUT);
-  const caps = ["research", "code", "knowledge", "meeting"] as const;
-  for (let i = 0; i < 20; i++) upsertBuilding(l, { label: `B${i}`, capability: caps[i % 4] });
+  const kinds = ["researchLab", "scrapYard", "hydroponics", "storageDepot"];
+  for (let i = 0; i < 12; i++) upsertBuilding(l, { label: `B${i}`, kind: kinds[i % 4] }); // Commons holds 6: 3 start buildings + 3
   l.buildings.forEach((b, i) => Object.assign(b, { x: (i * 7) % 40 + 2, z: (i * 11) % 40 + 2, color: "#000000" })); // scramble
   organiseLayout(l);
   for (const b of l.buildings) {
@@ -173,9 +176,11 @@ test("organise puts every building in its department's district, in department c
 
 test("a new building without a position drops into its district; tools prefer the agent's own building", () => {
   const l = cloneLayout(DEFAULT_LAYOUT);
-  const b = upsertBuilding(l, { label: "Market Desk", capability: "research" });
+  const b = upsertBuilding(l, { label: "Market Desk", kind: "researchLab" });
   assert.equal(districtAt(b.x, b.z), "research");
   upsertAgent(l, { name: "Watcher", job: "Watches the market for changes.", skill: "web", home: b.id });
+  const lab2 = upsertBuilding(l, { label: "Lab Two", kind: "researchLab" });
+  l.agents.find((a) => a.id === "researcher")!.home = lab2.id;
   assert.equal(buildingForTool(l, "web_search", "watcher"), b.id);
-  assert.equal(buildingForTool(l, "web_search", "researcher"), "research_lab");
+  assert.equal(buildingForTool(l, "web_search", "researcher"), lab2.id);
 });

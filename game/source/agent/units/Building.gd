@@ -24,6 +24,9 @@ var _occupants = {}  # agent_id -> display name
 var _label3d: Label3D
 var _status3d: Label3D
 var _pivot: Node3D
+var construction = -1.0  # 0..1 while under construction, -1 once built
+var economy = {}  # this building's line in the colony view (enabled, powered, producing, crew...)
+var _econ_sig = ""
 
 
 func _ready():
@@ -31,6 +34,7 @@ func _ready():
 		_pivot = Fx.fitted(model_path, model_size, 0.0, 4.2)  # tall models (rocket) stay in scale
 		find_child("Geometry").add_child(_pivot)
 		_add_extras()
+		_apply_construction()
 	await super()
 	var ui_scale = _match.label_scale if "label_scale" in _match else 1.0
 	var top = max(2.4, (_pivot.get_meta("height", 2.0) if _pivot else 2.0) + 0.7)
@@ -87,6 +91,35 @@ func _make_name_plate(top: float, ui_scale: float):
 	_status3d.offset = Vector2(0, -46)
 
 
+# Construction progress from the adapter (-1 when the building is finished). The shell
+# rises with the work: the model grows from a slab to full height.
+func set_construction(progress: float):
+	if is_equal_approx(construction, progress):
+		return
+	construction = progress
+	_apply_construction()
+	_render_status()
+
+
+func _apply_construction():
+	if _pivot == null:
+		return
+	if construction < 0.0:
+		_pivot.scale = Vector3.ONE
+	else:
+		_pivot.scale = Vector3(1.0, 0.12 + 0.88 * clampf(construction, 0.0, 1.0), 1.0)
+
+
+# The economy's view of this building (see docs/economy.md §13).
+func set_economy(info: Dictionary):
+	var sig = JSON.stringify(info)
+	if sig == _econ_sig:
+		return
+	_econ_sig = sig
+	economy = info
+	_render_status()
+
+
 func set_occupant(agent_id, working, display_name = ""):
 	var changed = false
 	if working and not _occupants.has(agent_id):
@@ -105,8 +138,21 @@ func _render_status():
 	if alert:
 		_status3d.text = "Waiting for you"
 		_status3d.modulate = Color(1.0, 0.62, 0.25)
-	elif not _occupants.is_empty():
-		_status3d.text = "%s working" % ", ".join(_occupants.values())
+	elif construction >= 0.0:
+		_status3d.text = "Under construction %d%%" % int(round(construction * 100.0))
+		_status3d.modulate = Color(1.0, 0.85, 0.5)
+	elif not economy.is_empty() and not economy.get("enabled", true):
+		_status3d.text = "Switched off"
+		_status3d.modulate = Color(0.7, 0.72, 0.78)
+	elif not economy.is_empty() and not economy.get("powered", true):
+		_status3d.text = "No power"
+		_status3d.modulate = Color(1.0, 0.45, 0.45)
+	elif not _occupants.is_empty() or int(economy.get("crew", 0)) > 0:
+		var parts = []
+		if int(economy.get("crew", 0)) > 0:
+			parts.append("%d colonists" % int(economy["crew"]))
+		parts.append_array(_occupants.values())
+		_status3d.text = "%s working" % ", ".join(parts)
 		_status3d.modulate = accent.lightened(0.25)
 	else:
 		_status3d.text = ""

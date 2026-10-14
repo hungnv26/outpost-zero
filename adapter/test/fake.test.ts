@@ -39,7 +39,7 @@ test("fake mission visits every agent state and completes after approval", async
   for (const s of ["thinking", "working", "waiting", "approval", "error", "complete", "idle"]) assert.ok(states.has(s as never), `missing state ${s}`);
 
   const locations = new Set(msgs.flatMap((m) => (m.type === "agent.state" ? [m.agent.location] : [])));
-  for (const l of ["command_centre", "research_lab", "code_factory", "knowledge_library", "human_approval", "rally_point", "repair_bay"])
+  for (const l of ["command_centre", "landing_module", "human_approval", "rally_point", "repair_bay"])
     assert.ok(locations.has(l as never), `missing location ${l}`);
 
   // seq is strictly increasing
@@ -74,7 +74,7 @@ test("cancel resets agents and marks mission cancelled", async () => {
   assert.equal(world.getMission()?.status, "cancelled");
   // Idle agents wait at their home building.
   assert.ok(world.snapshot().agents.every((a) => a.state === "idle"));
-  assert.equal(world.getAgent("researcher")!.location, "research_lab");
+  assert.equal(world.getAgent("researcher")!.location, "landing_module");
   assert.equal(world.getAgent("commander")!.location, "command_centre");
 });
 

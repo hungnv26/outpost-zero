@@ -3,7 +3,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Colony, ColonyError, loadColonyState, loadDefs, saveColonyState } from "../src/economy.ts";
+import { Colony, ColonyError, ColonyRunner, loadColonyState, loadDefs, saveColonyState } from "../src/economy.ts";
+import { World } from "../src/world.ts";
 import { playDefaultPlan } from "../src/economy-plan.ts";
 
 const defs = loadDefs(new URL("../../design/economy.json", import.meta.url));
@@ -86,4 +87,31 @@ test("state survives a save and load round trip and the view is derived from it"
   assert.equal(d.view().hour, 6);
   assert.equal(d.view().speed, 3);
   assert.equal(loadColonyState(join(dir, "missing.json")), null);
+});
+
+test("construction is a job on the map: two idle machines build it, then the Surveyor moves in", () => {
+  const world = new World("fake");
+  const runner = new ColonyRunner(new Colony(defs), world, null, 1);
+  const layouts: number[] = [];
+  runner.onLayout = (l) => void layouts.push(l.buildings.length);
+  runner.start();
+  assert.equal(runner.colony.state.machines, 6);
+  runner.command((c, r) => r.build("researchLab"));
+  const site = world.layout.buildings.find((b) => b.status === "building")!;
+  assert.equal(site.kind, "researchLab");
+  const builders = world.snapshot().agents.filter((a) => a.detail === "construction" && a.location === site.id);
+  assert.equal(builders.length, 2);
+  for (let i = 0; i < 16; i++) runner.step();
+  const built = world.layout.buildings.find((b) => b.id === site.id)!;
+  assert.equal(built.status, "built");
+  assert.equal(world.snapshot().agents.filter((a) => a.detail === "construction").length, 0);
+  assert.equal(world.layout.agents.find((a) => a.id === "researcher")!.home, site.id);
+  assert.equal(world.getAgent("researcher")!.location, site.id);
+  assert.ok(runner.colony.state.buildings.some((b) => b.id === site.id && b.type === "researchLab"));
+  assert.ok(layouts.length >= 2);
+  // Cancelling a site removes it from the map and frees the builders.
+  runner.command((c, r) => r.build("solarArray"));
+  runner.command((c, r) => r.cancelBuild());
+  assert.equal(world.layout.buildings.filter((b) => b.status === "building").length, 0);
+  assert.equal(world.snapshot().agents.filter((a) => a.detail === "construction").length, 0);
 });

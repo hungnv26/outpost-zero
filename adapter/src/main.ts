@@ -6,7 +6,7 @@ import type { Source } from "./source.ts";
 import { FakeSource } from "./sources/fake.ts";
 import { HermesSource } from "./sources/hermes.ts";
 import { Base } from "./base.ts";
-import { loadLayout } from "./layout.ts";
+import { loadLayout, saveLayout } from "./layout.ts";
 import { MissionControlSink } from "./sinks/mission-control.ts";
 import { World } from "./world.ts";
 import { Colony, ColonyRunner, loadColonyState, loadDefs } from "./economy.ts";
@@ -81,11 +81,27 @@ if (env.COLONY !== "0") {
   const colonyPath = join(dirname(layoutPath), "colony.json");
   const saved = loadColonyState(colonyPath);
   colony = new ColonyRunner(new Colony(defs, saved ?? undefined), world, colonyPath, env.COLONY_SECONDS_PER_HOUR ? Number(env.COLONY_SECONDS_PER_HOUR) : undefined);
+  colony.onLayout = async (l) => {
+    saveLayout(layoutPath, l);
+    await source.layoutChanged?.(l);
+  };
   colony.start();
   if (!saved) world.logLine("Sol 0: Odyssey-7 is down. 24 colonists awake, 198 in cryo. Keep them alive.", "warn");
 }
 
-await startServer(world, source, port, "127.0.0.1", new Base(world, source, layoutPath), colony);
+const base = new Base(world, source, layoutPath);
+if (colony) {
+  const runner = colony;
+  base.before = (cmd) => {
+    if (cmd.type === "layout.building.remove") runner.canRemove(cmd.id);
+  };
+  base.after = (cmd) => {
+    if (cmd.type === "layout.building.remove") runner.removed(cmd.id);
+    else if (cmd.type === "layout.reset") runner.reset();
+    else runner.syncWithLayout();
+  };
+}
+await startServer(world, source, port, "127.0.0.1", base, colony);
 console.log(`[adapter] source=${sourceName} ws://127.0.0.1:${port}/world mission-control=${sink ? env.MC_URL : "off"}`);
 
 if (env.ADAPTER_VERBOSE === "1") world.on("message", (m) => console.log(JSON.stringify(m)));

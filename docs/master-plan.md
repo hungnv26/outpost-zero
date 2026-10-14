@@ -103,7 +103,17 @@ The hourly tick in the adapter, with nothing new to look at yet except numbers.
 - **Done when:** the economy test passes 80 sols on the default plan; the HUD numbers change
   every real minute; restart resumes from `.data/colony.json`; the fake source still works.
 
-### Phase 2: Buildings and colonists (4 sessions)
+### Phase 2: Buildings and colonists (4 sessions) — DONE 2026-10-14
+
+Evidence: the default base is now the crash site (Command Core, Human Approval, Landing Module,
+Cryo Bay, Habitat; the six machines live at the lander until their building exists); the Build
+tab is a catalog of economy kinds with cost, hours and power, built into the district or at a
+clicked spot; a site is a map building that rises with progress while two idle machines work
+on it (`docs/screenshots/colony-day.jpg`); the building panel shows power, rates, crew and the
+switch, wake and repair actions; colonists are a crowd that walks to crewed lines by day and
+to the Habitat at night; the sun dims at night. `tools/play_default.mjs` played the default
+order through the game's own HTTP commands: first wake on sol 10, 32 awake by sol 12, no deaths,
+matching the simulator. 30 adapter tests pass.
 
 Make the numbers come from things on the map.
 

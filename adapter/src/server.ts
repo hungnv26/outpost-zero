@@ -54,7 +54,9 @@ export function parseCommand(raw: string): ClientCommand | null {
     case "colony.set_speed":
       return typeof c.speed === "number" ? { type: "colony.set_speed", speed: c.speed } : null;
     case "colony.build":
-      return typeof c.building === "string" ? { type: "colony.build", building: c.building } : null;
+      return typeof c.building === "string"
+        ? { type: "colony.build", building: c.building, ...(typeof c.x === "number" && typeof c.z === "number" ? { x: c.x, z: c.z } : {}) }
+        : null;
     case "colony.cancel_build":
       return { type: "colony.cancel_build" };
     case "colony.toggle":
@@ -79,14 +81,14 @@ export function startServer(world: World, source: Source, port: number, host = "
     }
     if (cmd.type.startsWith("colony.")) {
       if (!colony) throw new ColonyError("The colony economy is not running.");
-      return colony.command((c) => {
+      return colony.command((c, r) => {
         switch (cmd.type) {
           case "colony.set_speed":
             return c.setSpeed(cmd.speed);
           case "colony.build":
-            return void c.build(cmd.building);
+            return r.build(cmd.building, cmd.x, cmd.z);
           case "colony.cancel_build":
-            return c.cancelBuild();
+            return r.cancelBuild();
           case "colony.toggle":
             return void c.toggle(cmd.id, cmd.enabled);
           case "colony.wake":

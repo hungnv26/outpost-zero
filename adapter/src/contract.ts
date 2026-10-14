@@ -153,7 +153,7 @@ export type ClientCommand =
   | { type: "layout.reset" }
   // Colony economy (validated in economy.ts)
   | { type: "colony.set_speed"; speed: number }
-  | { type: "colony.build"; building: string }
+  | { type: "colony.build"; building: string; x?: number; z?: number }
   | { type: "colony.cancel_build" }
   | { type: "colony.toggle"; id: string; enabled: boolean }
   | { type: "colony.wake"; count: number }

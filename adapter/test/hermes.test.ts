@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { WebSocketServer } from "ws";
 import type { ServerMessage } from "../src/contract.ts";
 import { cleanReport, HermesSource } from "../src/sources/hermes.ts";
-import { buildingForTool, DEFAULT_LAYOUT } from "../src/layout.ts";
+import { buildingForTool, cloneLayout, DEFAULT_LAYOUT, upsertBuilding } from "../src/layout.ts";
 import { HermesTranslator } from "../src/sources/hermes-translator.ts";
 import { World } from "../src/world.ts";
 
@@ -35,7 +35,7 @@ test("translator maps a captured Hermes run onto agent states", () => {
   assert.equal(final!.failed, false);
   assert.match(final!.content, /Search Agent Output/);
 
-  assert.deepEqual(agentStates(msgs, "researcher").slice(0, 2), ["working@research_lab", "complete@research_lab"]);
+  assert.deepEqual(agentStates(msgs, "researcher").slice(0, 2), ["working@landing_module", "complete@landing_module"]); // no lab yet: works at the crash site
   // The orchestrator itself is the Commander: plans, coordinates each step, writes the report.
   const commander = agentStates(msgs, "commander");
   assert.equal(commander[0], "thinking@command_centre");
@@ -43,7 +43,7 @@ test("translator maps a captured Hermes run onto agent states", () => {
   assert.equal(commander.at(-1), "complete@command_centre");
   assert.match(world.getAgent("commander")!.detail ?? "", /Report delivered/);
   assert.ok(agentStates(msgs, "analyst").includes("error@repair_bay"));
-  assert.ok(agentStates(msgs, "reviewer").includes("working@knowledge_library"));
+  assert.ok(agentStates(msgs, "reviewer").includes("working@landing_module"));
   assert.equal(world.getMission()?.status, "running");
 
   const tasks = world.snapshot().tasks;
@@ -66,16 +66,20 @@ test("translator ignores traces from other sessions", () => {
 });
 
 test("tool calls move the agent to the matching building", () => {
-  const world = new World("hermes");
+  const layout = cloneLayout(DEFAULT_LAYOUT);
+  const lab = upsertBuilding(layout, { label: "Research Lab", kind: "researchLab" });
+  const fab = upsertBuilding(layout, { label: "Fabricator", kind: "fabricator" });
+  const world = new World("hermes", Date.now, layout);
   world.startMission("m1", "x");
   const tr = new HermesTranslator(world, "m1", "c1");
   tr.handle({ type: "trace_update", session_id: "c1", trace: { agent: "Router", action: "Route", message: "Step 1/1: Delegating to agent 'Reviewer' (reviewer)", status: "success" } });
   tr.handle({ type: "activity_log", log: { source: "Reviewer", message: `🛠️ Execution (subagent): 'web_search' with arguments {"query":"EV Council 2024 report"}` } });
   const a = world.getAgent("reviewer")!;
-  assert.equal(a.location, "research_lab");
+  assert.equal(a.location, lab.id);
   assert.equal(a.detail, "web_search: EV Council 2024 report");
-  assert.equal(buildingForTool(DEFAULT_LAYOUT, "execute_command"), "code_factory");
-  assert.equal(buildingForTool(DEFAULT_LAYOUT, "search_obsidian"), "research_lab"); // "search" wins: it is a lookup
+  assert.equal(buildingForTool(layout, "execute_command"), fab.id);
+  assert.equal(buildingForTool(layout, "search_obsidian"), lab.id); // "search" wins: it is a lookup
+  assert.equal(buildingForTool(DEFAULT_LAYOUT, "execute_command"), null); // nothing built yet
 });
 
 // Minimal stand-in for Hermes: REST endpoints the source calls + a WS that replays the fixture.

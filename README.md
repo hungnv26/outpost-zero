@@ -134,9 +134,10 @@ Open the **Build** tab to design your own base. Everything you build does real w
 |---|---|
 | ![Build mode: buildings grouped by department, with Organise base](docs/screenshots/build-mode.jpg) | ![The Departments tab: what each department does and its size](docs/screenshots/departments.jpg) |
 
-- **Buildings:** add one with a name, a department and a model (models that suit the
-  department are offered first). **Add to district** puts it in the next free slot of its
-  district; **Choose spot** lets you click a place yourself. **Organise base** moves every
+- **Buildings:** a catalog of what the colony can build ([docs/economy.md](docs/economy.md)),
+  each with its cost in materials and parts, build hours and power. **Build** puts it in the
+  next free slot of its department's district; **Spot** lets you click a place yourself. Two idle
+  machines walk to the site and build it; the shell rises with the work. **Organise base** moves every
   building back into its district. Buildings, the Rally Point and the Repair Bay can be moved;
   your own buildings can be removed (the Command Centre and Human Approval are permanent).
 - **Characters:** create one with a name, a job description, a skill (web research or

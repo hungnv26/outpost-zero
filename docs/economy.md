@@ -236,17 +236,21 @@ colony: {
   flows:  { ...net change per sol, from the last 24 hours },
   colonists: { awake, cryo, dead, beds, hungry, thirsty, waking, striking },
   machines:  { count, autonomy, autonomyName, powered, building },
-  buildings: [{ id, type, label, dept, enabled, powered, producing }],
-  building:  { type, label, hoursLeft, hours } | null,                      // under construction
+  buildings: [{ id, type, label, dept, enabled, powered, producing, crew, crewNeeded, drawKw, in, out, permanent, note }],
+  building:  { id, type, label, hoursLeft, hours, builders } | null,       // the site under construction
+  catalog:   [{ type, label, dept, cost, buildHours, drawKw, genKw, crew, in, out, affordable, blocked, note }],
   trust, influence, reactor, chapter
 }
 ```
 
-Commands (WebSocket or `POST /command`): `colony.set_speed {speed}`, `colony.build {building}`,
+Commands (WebSocket or `POST /command`): `colony.set_speed {speed}`, `colony.build {building, x?, z?}`
+(a site on the map: the next free slot of its department, or the given spot),
 `colony.cancel_build`, `colony.toggle {id, enabled}`, `colony.wake {count}`,
 `colony.repair {target: "reactor"}`. A refused command answers with the reason
 (`{"error": "Excavation Site needs Chapter II"}`). State persists in `.data/colony.json` after
-every tick and command; delete it to start a new colony. `COLONY=0` disables the economy,
+every tick and command; **Reset base** in Build mode starts a new colony at the crash site.
+Map buildings carry `kind`, `status` and `progress` (`.data/base.json`); the economy and the
+map are kept in step by the adapter, and a building removed in Build mode leaves the economy. `COLONY=0` disables the economy,
 `COLONY_SECONDS_PER_HOUR` overrides the clock for tests.
 
 Still to come: `autonomy.set`, `economy.event`, `colony.chapter`, and the compute figures

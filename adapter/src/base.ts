@@ -28,6 +28,9 @@ export class Base {
   private world: World;
   private source: Source;
   private path: string | null;
+  // The economy's say on layout edits (set by main.ts): a check before, a reaction after.
+  before: ((cmd: LayoutCommand) => void) | null = null;
+  after: ((cmd: LayoutCommand) => void) | null = null;
 
   constructor(world: World, source: Source, path: string | null) {
     this.world = world;
@@ -41,6 +44,7 @@ export class Base {
     if ((status === "planning" || status === "running") && cmd.type !== "layout.terrain") {
       throw new LayoutError("Finish or abort the current mission before changing the base.");
     }
+    this.before?.(cmd);
     const next: BaseLayout = cmd.type === "layout.reset" ? cloneLayout(DEFAULT_LAYOUT) : cloneLayout(this.world.layout);
     switch (cmd.type) {
       case "layout.building.upsert":
@@ -70,5 +74,6 @@ export class Base {
     this.world.applyLayout(next);
     if (this.path) saveLayout(this.path, next);
     await this.source.layoutChanged?.(next);
+    this.after?.(cmd);
   }
 }

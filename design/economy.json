@@ -41,7 +41,8 @@
     "salvage": {
       "unit": "kg",
       "kind": "stock",
-      "cap": 1000
+      "cap": 1000,
+      "$comment": "The wreck is worth about 600 kg; after that only expeditions bring more."
     },
     "materials": {
       "unit": "kg",
@@ -438,7 +439,7 @@
       "charge": 50,
       "water": 300,
       "food": 500,
-      "salvage": 200,
+      "salvage": 600,
       "materials": 150,
       "parts": 80,
       "medicine": 30,

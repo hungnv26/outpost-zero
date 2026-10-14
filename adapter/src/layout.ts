@@ -17,6 +17,9 @@ export interface BuildingDef {
   color: string; // "#rrggbb" accent
   capability: Capability;
   builtin?: boolean;
+  kind?: string; // economy building type (design/economy.json); every building has one
+  status?: "building" | "built";
+  progress?: number; // 0..1 while under construction
 }
 
 export interface SpotDef {
@@ -36,6 +39,7 @@ export interface AgentDef {
   color: string;
   home: string; // building id it works at by default
   builtin?: boolean;
+  prefers?: string; // economy kind it moves into once one is built (from the crash site)
 }
 
 // Ground and light themes. Purely visual, so they can change at any time.
@@ -63,6 +67,30 @@ export const CAPABILITY_TOOLS: Record<Capability, RegExp | null> = {
   approval: null,
   meeting: null,
 };
+
+// Economy building kinds (design/economy.json) on the map: their department and model.
+export const KIND_DEPT: Record<string, Capability> = {
+  landingModule: "meeting", commandCore: "command", humanApproval: "approval", cryoBay: "meeting", habitat: "meeting",
+  storageDepot: "meeting", solarArray: "code", batteryBank: "code", waterExtractor: "code", scrapYard: "code",
+  fabricator: "code", launchGantry: "code", hydroponics: "knowledge", medBay: "knowledge", researchLab: "research",
+  relayDish: "research", excavationSite: "research", networkLink: "research",
+};
+export const KIND_MODEL: Record<string, string> = {
+  landingModule: "lander_A", commandCore: "CommandCenter", humanApproval: "gate_complex", cryoBay: "containers_A",
+  habitat: "HouseLong", storageDepot: "cargodepot_C", solarArray: "SolarPanelStructure", batteryBank: "machine_barrelLarge",
+  waterExtractor: "machine_generatorLarge", scrapYard: "cargodepot_A", fabricator: "VehicleFactory", launchGantry: "Rocket",
+  hydroponics: "GeodesicDome", medBay: "basemodule_C", researchLab: "basemodule_A", relayDish: "satelliteDish_large",
+  excavationSite: "drill_structure", networkLink: "machine_wireless",
+};
+export const KIND_LABEL: Record<string, string> = {
+  landingModule: "Landing Module", commandCore: "Command Core", humanApproval: "Human Approval", cryoBay: "Cryo Bay",
+  habitat: "Habitat", storageDepot: "Storage Depot", solarArray: "Solar Array", batteryBank: "Battery Bank",
+  waterExtractor: "Water Extractor", scrapYard: "Scrap Yard", fabricator: "Fabricator", launchGantry: "Launch Gantry",
+  hydroponics: "Hydroponics Bay", medBay: "Med Bay", researchLab: "Research Lab", relayDish: "Relay Dish",
+  excavationSite: "Excavation Site", networkLink: "Network Link",
+};
+// Ids of the buildings every colony starts with (fixed, so the economy can find them).
+export const START_IDS: Record<string, string> = { landingModule: "landing_module", commandCore: "command_centre", humanApproval: "human_approval", cryoBay: "cryo_bay", habitat: "habitat" };
 
 export const MAX_BUILDINGS = 32; // = the district slots plus the two in the centre
 export const MAX_CUSTOM_AGENTS = 24; // on top of the 7 built-in characters
@@ -199,25 +227,26 @@ export const DEFAULT_LAYOUT: BaseLayout = organiseLayout({
   version: 1,
   size: MAP_SIZE,
   terrain: "mars",
+  // The crash site: MOTHER's core, the checkpoint, the wrecked lander, the cryo pods and one habitat.
   buildings: [
-    { id: "command_centre", label: "Command Centre", x: 16, z: 16, model: "CommandCenter", color: "#66ccff", capability: "command", builtin: true },
-    { id: "research_lab", label: "Research Lab", x: 6.5, z: 6.5, model: "lander_B", color: "#59bfff", capability: "research", builtin: true },
-    { id: "code_factory", label: "Code Factory", x: 25.5, z: 6.5, model: "cargodepot_C", color: "#ff9940", capability: "code", builtin: true },
-    { id: "knowledge_library", label: "Knowledge Library", x: 6.5, z: 25.5, model: "basemodule_A", color: "#73f299", capability: "knowledge", builtin: true },
-    { id: "human_approval", label: "Human Approval", x: 25.5, z: 25.5, model: "gate_complex", color: "#d98cff", capability: "approval", builtin: true },
+    { id: "command_centre", label: "Command Core", x: 16, z: 16, model: "CommandCenter", color: "#66ccff", capability: "command", builtin: true, kind: "commandCore", status: "built" },
+    { id: "human_approval", label: "Human Approval", x: 25.5, z: 25.5, model: "gate_complex", color: "#d98cff", capability: "approval", builtin: true, kind: "humanApproval", status: "built" },
+    { id: "landing_module", label: "Landing Module", x: 16, z: 6, model: "lander_A", color: "#ff7fae", capability: "meeting", builtin: true, kind: "landingModule", status: "built" },
+    { id: "cryo_bay", label: "Cryo Bay", x: 20, z: 6, model: "containers_A", color: "#ff7fae", capability: "meeting", builtin: true, kind: "cryoBay", status: "built" },
+    { id: "habitat", label: "Habitat", x: 26, z: 26, model: "HouseLong", color: "#ff7fae", capability: "meeting", builtin: true, kind: "habitat", status: "built" },
   ],
   spots: [
     { id: "rally_point", label: "Rally Point", x: 16, z: 6 },
     { id: "repair_bay", label: "Repair Bay", x: 16, z: 26.5 },
   ],
   agents: [
-    { id: "commander", name: "Commander", hermesId: "jarvis", job: "Plans the mission, coordinates each step and writes the final summary.", skill: "orchestrator", model: "Mech_B", color: "#d9edff", home: "command_centre", builtin: true },
-    { id: "researcher", name: "Researcher", hermesId: "research", job: "Deep research: searches the web and reads sources.", skill: "web", model: "Astronaut_A", color: "#59ccff", home: "research_lab", builtin: true },
-    { id: "scout", name: "Scout", hermesId: "scout", job: "Quick scan of the latest news and announcements.", skill: "web", model: "EnemyFlying", color: "#ffe04d", home: "research_lab", builtin: true },
-    { id: "analyst", name: "Analyst", hermesId: "insights", job: "Extracts key facts, numbers and trends from what was gathered.", skill: "reasoning", model: "Astronaut_B", color: "#8cf280", home: "knowledge_library", builtin: true },
-    { id: "coder", name: "Coder", hermesId: "code", job: "Runs code in the sandbox: calculations and charts.", skill: "code", model: "Mech_D", color: "#ff9940", home: "code_factory", builtin: true },
-    { id: "writer", name: "Writer", hermesId: "writer", job: "Drafts the report from the findings.", skill: "reasoning", model: "Astronaut_C", color: "#ff80bf", home: "knowledge_library", builtin: true },
-    { id: "reviewer", name: "Reviewer", hermesId: "reviewer", job: "Checks the result for accuracy and gaps; always the last step.", skill: "reasoning", model: "Mech_A", color: "#d98cff", home: "knowledge_library", builtin: true },
+    { id: "commander", name: "Foreman", hermesId: "jarvis", job: "MOTHER's proxy: plans the mission, coordinates each step and writes the final summary.", skill: "orchestrator", model: "Mech_B", color: "#d9edff", home: "command_centre", builtin: true },
+    { id: "researcher", name: "Surveyor", hermesId: "research", job: "Deep research: searches the web and reads sources; leads expeditions.", skill: "web", model: "Astronaut_A", color: "#59ccff", home: "landing_module", builtin: true, prefers: "researchLab" },
+    { id: "scout", name: "Scout", hermesId: "scout", job: "Quick scan of the latest news and announcements; short expeditions.", skill: "web", model: "EnemyFlying", color: "#ffe04d", home: "landing_module", builtin: true, prefers: "researchLab" },
+    { id: "analyst", name: "Analyst", hermesId: "insights", job: "Extracts key facts, numbers and trends from what was gathered.", skill: "reasoning", model: "Astronaut_B", color: "#8cf280", home: "landing_module", builtin: true, prefers: "researchLab" },
+    { id: "coder", name: "Fabricator Unit", hermesId: "code", job: "Runs code in the sandbox: calculations and charts.", skill: "code", model: "Mech_D", color: "#ff9940", home: "landing_module", builtin: true, prefers: "fabricator" },
+    { id: "writer", name: "Archivist", hermesId: "writer", job: "Drafts the report from the findings; keeps the colony log.", skill: "reasoning", model: "Astronaut_C", color: "#ff80bf", home: "landing_module", builtin: true, prefers: "researchLab" },
+    { id: "reviewer", name: "Warden", hermesId: "reviewer", job: "Checks the result for accuracy and gaps; always the last step.", skill: "reasoning", model: "Mech_A", color: "#d98cff", home: "landing_module", builtin: true, prefers: "researchLab" },
   ],
 });
 
@@ -230,7 +259,14 @@ export function loadLayout(path: string): BaseLayout {
   try {
     const raw = JSON.parse(readFileSync(path, "utf8"));
     if (raw?.version !== 1) return cloneLayout(DEFAULT_LAYOUT);
-    const l = raw as BaseLayout;
+    let l = raw as BaseLayout;
+    if (!l.buildings.some((b) => b.kind)) {
+      // A base from before the economy: start again at the crash site, keeping the look and custom characters.
+      const fresh = cloneLayout(DEFAULT_LAYOUT);
+      fresh.terrain = l.terrain;
+      for (const a of l.agents) if (!a.builtin && !fresh.agents.some((x) => x.id === a.id)) fresh.agents.push({ ...a, home: "landing_module" });
+      l = fresh;
+    }
     // Built-ins the player deleted from an older file come back (they're load-bearing).
     for (const b of DEFAULT_LAYOUT.buildings) if (!l.buildings.some((x) => x.id === b.id) && isCore(b.id)) l.buildings.push(structuredClone(b));
     for (const a of DEFAULT_LAYOUT.agents) if (!l.agents.some((x) => x.id === a.id)) l.agents.push(structuredClone(a));
@@ -256,7 +292,7 @@ export function saveLayout(path: string, l: BaseLayout): void {
 
 // Buildings the base cannot work without (can be moved and restyled, never deleted).
 export function isCore(buildingId: string): boolean {
-  return buildingId === "command_centre" || buildingId === "human_approval";
+  return Object.values(START_IDS).includes(buildingId);
 }
 
 // The building an agent drives to for a tool: its own home if that hosts the work,
@@ -272,7 +308,8 @@ export function buildingForTool(l: BaseLayout, tool: string, agentId?: string): 
 
 export function homeOf(l: BaseLayout, agentId: string): string {
   const home = l.agents.find((a) => a.id === agentId)?.home;
-  return home && l.buildings.some((b) => b.id === home) ? home : "command_centre";
+  if (home && l.buildings.some((b) => b.id === home)) return home;
+  return l.buildings.some((b) => b.id === "landing_module") && agentId !== "commander" ? "landing_module" : "command_centre";
 }
 
 // ---- validation of edit commands (input comes from game clients) ----
@@ -309,14 +346,18 @@ export function upsertBuilding(l: BaseLayout, input: Record<string, unknown>): B
   const label = text(input.label, 40);
   const existing = typeof input.id === "string" ? l.buildings.find((b) => b.id === input.id) : undefined;
   if (!existing && !label) throw new LayoutError("A building needs a name.");
+  const kind = typeof input.kind === "string" && KIND_DEPT[input.kind] ? input.kind : existing?.kind;
+  if (!existing && !kind) throw new LayoutError("Buildings are built from the catalog in Build mode.");
   if (!existing && l.buildings.length >= MAX_BUILDINGS) throw new LayoutError(`The base holds at most ${MAX_BUILDINGS} buildings.`);
-  const model = typeof input.model === "string" && BUILDING_MODELS.includes(input.model) ? input.model : existing?.model ?? "hangar_smallA";
+  const model = typeof input.model === "string" && BUILDING_MODELS.includes(input.model) ? input.model : existing?.model ?? (kind ? KIND_MODEL[kind] : "hangar_smallA");
   const capability =
     existing?.builtin
       ? existing.capability
-      : CAPABILITIES.includes(input.capability as Capability)
-        ? (input.capability as Capability)
-        : existing?.capability ?? "meeting";
+      : kind && !existing
+        ? KIND_DEPT[kind]
+        : CAPABILITIES.includes(input.capability as Capability)
+          ? (input.capability as Capability)
+          : existing?.capability ?? "meeting";
   const color = DEPARTMENTS[departmentOf(capability)].color;
   let x: number;
   let z: number;
@@ -341,11 +382,12 @@ export function upsertBuilding(l: BaseLayout, input: Record<string, unknown>): B
     Object.assign(existing, { label: label || existing.label, model, color, capability, x, z });
     return existing;
   }
+  const status = input.status === "building" ? "building" : "built";
   // Spot ids and the core buildings' ids are taken too (a building named "Rally Point"
   // must not become rally_point, or agents sent there would walk to the spot).
   const taken = new Set([...l.buildings.map((b) => b.id), ...l.spots.map((s) => s.id), "command_centre", "human_approval"]);
   const id = uniqueId(slug(label), taken);
-  const b: BuildingDef = { id, label, x, z, model, color, capability };
+  const b: BuildingDef = { id, label, x, z, model, color, capability, kind, status, progress: status === "building" ? 0 : undefined };
   l.buildings.push(b);
   return b;
 }
@@ -355,7 +397,7 @@ export function removeBuilding(l: BaseLayout, id: string): void {
   if (!b) throw new LayoutError("No such building.");
   if (isCore(id)) throw new LayoutError(`${b.label} can be moved but not removed.`);
   l.buildings = l.buildings.filter((x) => x.id !== id);
-  for (const a of l.agents) if (a.home === id) a.home = "command_centre";
+  for (const a of l.agents) if (a.home === id) a.home = l.buildings.some((x) => x.id === "landing_module") ? "landing_module" : "command_centre";
 }
 
 export function moveSpot(l: BaseLayout, id: string, x: unknown, z: unknown): SpotDef {
@@ -405,7 +447,7 @@ export function upsertAgent(l: BaseLayout, input: Record<string, unknown>): Agen
 // Where a new character lives when none is chosen: a building of the department its skill uses.
 function defaultHome(l: BaseLayout, skill: unknown): string {
   const want: Capability = skill === "web" ? "research" : "knowledge";
-  return l.buildings.find((b) => b.capability === want)?.id ?? "command_centre";
+  return l.buildings.find((b) => b.capability === want && b.status !== "building")?.id ?? (l.buildings.some((b) => b.id === "landing_module") ? "landing_module" : "command_centre");
 }
 
 export function setTerrain(l: BaseLayout, terrain: unknown): void {

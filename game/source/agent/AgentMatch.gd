@@ -66,6 +66,10 @@ var _replay_wait_id = ""
 var _placement = null  # {kind, payload, label, preview} while placing in Build mode
 var _terrain_id = ""
 var _env_duplicated = false  # the scene's Environment is copied once, then tuned per terrain
+var _crowd = null  # the colonists (Crowd.gd)
+var _colony = {}  # the latest colony view (economy)
+var _light_preset = {}  # the terrain's sun and ambient, dimmed at night
+var _daylight = true
 
 
 func _ready():
@@ -89,6 +93,8 @@ func _ready():
 	_decor = WorldDecorScript.new()
 	_decor.ui_scale = label_scale
 	add_child(_decor)
+	_crowd = load("res://source/agent/Crowd.gd").new()
+	add_child(_crowd)
 	_apply_terrain("mars")
 	_replay = ReplayPlayerScript.new()
 	add_child(_replay)
@@ -225,6 +231,7 @@ func _make_building(def: Dictionary):
 	b.icon_kind = _hud._dept_icon(Departments.of(def["capability"])) if _hud != null else ""
 	b.snapshots = _hud.snapshots if _hud != null else null
 	b.position = Vector3(def["x"], 0, def["z"])
+	b.construction = float(def.get("progress", 0.0)) if def.get("status", "built") == "building" else -1.0
 	b.set_meta("sig", _sig(def, ["label", "model", "color", "x", "z"]))
 	return b
 
@@ -261,6 +268,7 @@ func _apply_layout(layout: Dictionary):
 		var node = _buildings.get(def["id"])
 		var sig = _sig(def, ["label", "model", "color", "x", "z"])
 		if node != null and is_instance_valid(node) and node.get_meta("sig", "") == sig:
+			node.set_construction(float(def.get("progress", 0.0)) if def.get("status", "built") == "building" else -1.0)
 			continue
 		if node != null and is_instance_valid(node):
 			node.queue_free()
@@ -300,6 +308,7 @@ func _apply_layout(layout: Dictionary):
 	_rebuild_decor()
 	_hud.set_layout(layout)
 	_repark_agents()
+	_apply_colony(_colony)
 
 
 # After a layout edit (a building moved, a home changed, characters added or removed),
@@ -349,9 +358,53 @@ func _apply_terrain(id: String):
 	sun.light_energy = t["sun_energy"] * 1.1
 	sun.light_angular_distance = 1.5
 	sun.shadow_blur = 1.2
+	_light_preset = t
+	_set_daylight(_daylight, true)
 	_decor.set_road_color(t["road"])
 	if _hud != null:
 		_hud.set_terrain(id)
+
+
+# Night follows the colony clock: the sun drops to a quarter and the ambient light cools.
+func _set_daylight(day: bool, immediate := false):
+	_daylight = day
+	if _light_preset.is_empty():
+		return
+	var sun = $DirectionalLight3D
+	var env = $WorldEnvironment.environment
+	var sun_e = _light_preset["sun_energy"] * (1.1 if day else 0.28)
+	var amb_e = _light_preset["ambient_energy"] * (1.0 if day else 0.55)
+	var amb_c = _light_preset["ambient"] if day else _light_preset["ambient"].darkened(0.25).lerp(Color(0.55, 0.65, 0.95), 0.4)
+	if immediate:
+		sun.light_energy = sun_e
+		env.ambient_light_energy = amb_e
+		env.ambient_light_color = amb_c
+		return
+	var tw = create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(sun, "light_energy", sun_e, 2.5)
+	tw.tween_property(env, "ambient_light_energy", amb_e, 2.5)
+	tw.tween_property(env, "ambient_light_color", amb_c, 2.5)
+
+
+# The colony view (economy) reaches the map: building states, the crowd, day and night.
+func _apply_colony(colony):
+	if colony == null or colony.is_empty():
+		return
+	_colony = colony
+	for b in colony.get("buildings", []):
+		var node = _buildings.get(b["id"])
+		if node != null and is_instance_valid(node):
+			node.set_economy({"enabled": b.get("enabled", true), "powered": b.get("powered", true), "producing": b.get("producing", false), "crew": b.get("crew", 0)})
+	if bool(colony.get("daylight", true)) != _daylight:
+		_set_daylight(bool(colony.get("daylight", true)))
+	if _crowd != null:
+		_crowd.update(colony, _layout, func(id): return _building_pos(id), view_back())
+
+
+func _building_pos(id):
+	var b = _bdef(id)
+	return Vector3(b["x"], 0, b["z"]) if b != null else null
 
 
 func _remove_agent(id):
@@ -521,6 +574,8 @@ func _finish_placement():
 	var payload = _placement["payload"].duplicate()
 	if kind == "spot":
 		_client.send_command({"type": "layout.spot.move", "id": payload["id"], "x": p.x, "z": p.z})
+	elif kind == "colony_build":
+		_client.send_command({"type": "colony.build", "building": payload["building"], "x": p.x, "z": p.z})
 	else:
 		payload["x"] = p.x
 		payload["z"] = p.z
@@ -603,6 +658,7 @@ func _on_message(msg):
 			if world.has("layout"):
 				_apply_layout(world["layout"])
 			_hud.apply_snapshot(world)
+			_apply_colony(world.get("resources", {}).get("colony"))
 			_hud.set_connection(true, world.get("source", ""))
 			for a in world.get("agents", []):
 				_apply_agent(a, _first_snapshot)
@@ -651,6 +707,7 @@ func _on_message(msg):
 				_pending_approvals.erase(ap["id"])
 		"resource.update":
 			_hud.set_resources(msg["resources"])
+			_apply_colony(msg["resources"].get("colony"))
 		"log":
 			_hud.add_log(msg["line"])
 

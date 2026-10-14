@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { type BaseLayout, cloneLayout, KIND_DEPT, KIND_LABEL, KIND_MODEL, START_IDS, upsertBuilding } from "./layout.ts";
 import type { World } from "./world.ts";
 
 // ---- definitions (design/economy.json) ----
@@ -84,12 +85,12 @@ export interface ColonyState {
   influence: number;
   reactor: number; // 0..1 of nominal output
   buildings: BuildingInst[];
-  building: { type: string; hoursLeft: number } | null;
+  building: { id: string; type: string; hoursLeft: number } | null;
   waking: { count: number; hoursLeft: number } | null;
   shortHours: { food: number; water: number; air: number }; // in the current sol
   shortSols: { food: number; water: number }; // consecutive sols short
   deltas: Record<Stock, number[]>; // last 24 hourly net changes, newest last
-  last: { supplyKw: number; demandKw: number; cut: string[]; served: string[]; daylight: boolean; labour: number };
+  last: { supplyKw: number; demandKw: number; cut: string[]; served: string[]; daylight: boolean; labour: number; crews: Record<string, number>; builders: number };
   chapter: "I" | "II" | "III" | "IV";
   nextId: number;
 }
@@ -108,8 +109,12 @@ export interface ColonyView {
   flows: Record<Stock, number>; // net per sol, from the last 24 hours
   colonists: { awake: number; cryo: number; dead: number; beds: number; hungry: boolean; thirsty: boolean; waking: number; striking: boolean };
   machines: { count: number; autonomy: number; autonomyName: string; powered: boolean; building: number };
-  buildings: { id: string; type: string; label: string; dept: string; enabled: boolean; powered: boolean; producing: boolean }[];
-  building: { type: string; label: string; hoursLeft: number; hours: number } | null;
+  buildings: {
+    id: string; type: string; label: string; dept: string; enabled: boolean; powered: boolean; producing: boolean;
+    crew: number; crewNeeded: number; drawKw: number; in: Record<string, number>; out: Record<string, number>; permanent: boolean; note: string;
+  }[];
+  building: { id: string; type: string; label: string; hoursLeft: number; hours: number; builders: number } | null;
+  catalog: { type: string; label: string; dept: string; cost: Record<string, number>; buildHours: number; drawKw: number; genKw: number; crew: number; in: Record<string, number>; out: Record<string, number>; affordable: boolean; blocked: string | null; note: string }[];
   trust: number;
   influence: number;
   reactor: number;
@@ -118,14 +123,32 @@ export interface ColonyView {
 }
 
 export function labelOf(type: string): string {
-  const names: Record<string, string> = {
-    landingModule: "Landing Module", commandCore: "Command Core", habitat: "Habitat", cryoBay: "Cryo Bay", solarArray: "Solar Array",
-    batteryBank: "Battery Bank", waterExtractor: "Water Extractor", hydroponics: "Hydroponics Bay", scrapYard: "Scrap Yard",
-    fabricator: "Fabricator", medBay: "Med Bay", researchLab: "Research Lab", relayDish: "Relay Dish", storageDepot: "Storage Depot",
-    excavationSite: "Excavation Site", repairBay: "Repair Bay", rallyPoint: "Rally Point", humanApproval: "Human Approval",
-    launchGantry: "Launch Gantry", networkLink: "Network Link",
+  return KIND_LABEL[type] ?? (type === "repairBay" ? "Repair Bay" : type === "rallyPoint" ? "Rally Point" : type);
+}
+
+// What a building does, for the catalog and the building panel.
+export function noteOf(type: string): string {
+  const notes: Record<string, string> = {
+    landingModule: "The wrecked lander's reactor: 30 kW, losing 1% a sol until repaired.",
+    commandCore: "MOTHER. Hosts compute and plans missions.",
+    humanApproval: "Where the Warden waits for your decision.",
+    cryoBay: "198 colonists asleep; each pod draws power. Wake them here.",
+    habitat: "40 beds. Colonists need one each.",
+    storageDepot: "Raises the caps on water, food, salvage, materials and parts.",
+    solarArray: "40 kW in daylight, nothing at night.",
+    batteryBank: "Stores 150 kWh of daytime surplus for the night.",
+    waterExtractor: "Pulls 5 L of water an hour from the air and ice.",
+    scrapYard: "Turns 2 kg of salvage an hour into materials and the odd part.",
+    fabricator: "Makes parts from materials: construction, upkeep and repairs.",
+    hydroponics: "60 meals a sol from 24 L of water; feeds 20 colonists.",
+    medBay: "Medicine from materials: waking colonists, injuries, illness.",
+    researchLab: "Where real research missions earn data.",
+    relayDish: "Listens to deep space. Something is out there.",
+    excavationSite: "Digs into the ruins for artifacts. Machines only.",
+    launchGantry: "The way home.",
+    networkLink: "A door into the planetary network.",
   };
-  return names[type] ?? type;
+  return notes[type] ?? "";
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -135,6 +158,8 @@ export class Colony {
   state: ColonyState;
   // Lines for the game's feed, drained by the runner after each tick/command.
   events: { text: string; level: "info" | "warn" | "error" }[] = [];
+  // Ids of sites finished in the last tick (the runner updates the map).
+  completed: string[] = [];
 
   constructor(defs: EconomyDefs, state?: ColonyState) {
     this.defs = defs;
@@ -158,13 +183,13 @@ export class Colony {
       trust: s.trust,
       influence: s.influence,
       reactor: 1,
-      buildings: s.buildings.map((type) => ({ id: type, type, enabled: true, builtAt: 0 })),
+      buildings: s.buildings.filter((type) => START_IDS[type]).map((type) => ({ id: START_IDS[type], type, enabled: true, builtAt: 0 })),
       building: null,
       waking: null,
       shortHours: { food: 0, water: 0, air: 0 },
       shortSols: { food: 0, water: 0 },
       deltas: Object.fromEntries(STOCKS.map((k) => [k, [] as number[]])) as unknown as Record<Stock, number[]>,
-      last: { supplyKw: 0, demandKw: 0, cut: [], served: [], daylight: true, labour: 0 },
+      last: { supplyKw: 0, demandKw: 0, cut: [], served: [], daylight: true, labour: 0, crews: {}, builders: 0 },
       chapter: "I",
       nextId: 1,
     };
@@ -214,6 +239,32 @@ export class Colony {
     return after - before;
   }
 
+  // The machines are the real agents on the map (everyone but the Foreman).
+  setMachines(n: number): void {
+    this.state.machines = Math.max(0, Math.floor(n));
+  }
+
+  // Keep the economy's buildings in step with the map: every built building with a kind
+  // counts, nothing else does. Returns true when something changed.
+  syncBuildings(layout: BaseLayout): boolean {
+    const s = this.state;
+    const want = layout.buildings.filter((b) => b.kind && this.defs.buildings[b.kind] && b.status !== "building");
+    const before = JSON.stringify(s.buildings.map((b) => [b.id, b.type]));
+    const kept = s.buildings.filter((b) => want.some((w) => w.id === b.id && w.kind === b.type));
+    for (const w of want) if (!kept.some((b) => b.id === w.id)) kept.push({ id: w.id, type: w.kind!, enabled: true, builtAt: s.hour });
+    s.buildings = kept;
+    if (s.building && !layout.buildings.some((b) => b.id === s.building!.id)) s.building = null;
+    return before !== JSON.stringify(s.buildings.map((b) => [b.id, b.type]));
+  }
+
+  removeBuilding(id: string): void {
+    const b = this.state.buildings.find((x) => x.id === id);
+    if (!b) return;
+    if (this.defs.buildings[b.type]?.permanent) throw new ColonyError(`${labelOf(b.type)} cannot be removed`);
+    this.state.buildings = this.state.buildings.filter((x) => x.id !== id);
+    this.note(`${labelOf(b.type)} demolished`);
+  }
+
   // Something from outside the simulation (an expedition, a mission) delivers a stock.
   deliver(r: Stock, amount: number, reason: string): number {
     if (!(amount > 0)) return 0;
@@ -233,17 +284,26 @@ export class Colony {
     this.state.speed = speed as Speed;
   }
 
-  build(type: string): BuildingInst | { type: string; hoursLeft: number } {
+  // Why a kind cannot be built right now, or null.
+  blocked(type: string): string | null {
     const d = this.defs.buildings[type];
-    if (!d) throw new ColonyError(`unknown building type "${type}"`);
-    if (d.permanent) throw new ColonyError(`${labelOf(type)} cannot be built`);
-    if (d.requires) throw new ColonyError(`${labelOf(type)} needs ${d.requires}`);
-    if (this.state.building) throw new ColonyError(`already building ${labelOf(this.state.building.type)}`);
+    if (!d) return `unknown building type "${type}"`;
+    if (d.permanent) return `${labelOf(type)} cannot be built`;
+    if (d.requires) return `${labelOf(type)} needs ${d.requires}`;
+    if (this.state.building) return `already building ${labelOf(this.state.building.type)}`;
     for (const [r, v] of Object.entries(d.cost ?? {})) {
-      if ((this.state.stocks[r as Stock] ?? 0) < v) throw new ColonyError(`${labelOf(type)} needs ${v} ${r}, have ${r1(this.state.stocks[r as Stock] ?? 0)}`);
+      if ((this.state.stocks[r as Stock] ?? 0) < v) return `${labelOf(type)} needs ${v} ${r}, have ${r1(this.state.stocks[r as Stock] ?? 0)}`;
     }
+    return null;
+  }
+
+  // Pays for a building and opens its site; `id` is the map building's id.
+  build(type: string, id?: string): { id: string; type: string; hoursLeft: number } {
+    const why = this.blocked(type);
+    if (why) throw new ColonyError(why);
+    const d = this.defs.buildings[type];
     for (const [r, v] of Object.entries(d.cost ?? {})) this.add(r as Stock, -v);
-    this.state.building = { type, hoursLeft: d.buildHours ?? 0 };
+    this.state.building = { id: id ?? `b${this.state.nextId++}`, type, hoursLeft: d.buildHours ?? 0 };
     this.note(`construction of ${labelOf(type)} started`);
     return this.state.building;
   }
@@ -293,7 +353,9 @@ export class Colony {
 
   // ---- the hourly tick ----
 
-  tick(): void {
+  // One game hour. `builders` is how many machines are at the construction site this hour
+  // (the runner counts the real agents; the simulator assumes two).
+  tick(builders?: number): void {
     const s = this.state;
     const D = this.defs;
     const H = D.time.hoursPerSol;
@@ -304,7 +366,7 @@ export class Colony {
 
     // Labour: humans work their share of the sol (halved on strike); machines are added once we know they have power.
     let labour = s.awake * (D.colonists.workHoursPerSol / H) * (striking ? 0.5 : 1);
-    const buildMachines = s.building ? Math.min(2, s.machines) : 0;
+    const buildMachines = s.building ? Math.min(builders ?? 2, s.machines) : 0;
 
     // Power supply.
     const gen = D.buildings.landingModule.powerGenKw ?? 0;
@@ -357,6 +419,7 @@ export class Colony {
 
     // Production for powered, crewed lines with their inputs; a full output stock idles the line.
     const producing = new Set<string>();
+    const crews: Record<string, number> = {};
     for (const b of s.buildings) {
       const d = D.buildings[b.type];
       if (!d.out || !b.enabled || !served.has(b.id)) continue;
@@ -364,6 +427,7 @@ export class Colony {
       if (Object.keys(d.out).some((r) => s.stocks[r as Stock] >= 0.9 * this.cap(r as Stock))) continue;
       if (Object.entries(d.in ?? {}).some(([r, v]) => s.stocks[r as Stock] < v)) continue;
       labour -= d.crew ?? 0;
+      crews[b.id] = d.crew ?? 0;
       for (const [r, v] of Object.entries(d.in ?? {})) this.add(r as Stock, -v);
       for (const [r, v] of Object.entries(d.out)) this.add(r as Stock, v * (d.machinesOnly ? eff : 1));
       producing.add(b.id);
@@ -386,9 +450,9 @@ export class Colony {
     if (s.building) {
       s.building.hoursLeft -= (buildMachines / 2) * eff * (machinesPowered ? 1 : 0.25);
       if (s.building.hoursLeft <= 0) {
-        const id = `b${s.nextId++}`;
-        s.buildings.push({ id, type: s.building.type, enabled: true, builtAt: s.hour });
+        s.buildings.push({ id: s.building.id, type: s.building.type, enabled: true, builtAt: s.hour });
         this.note(`${labelOf(s.building.type)} online`);
+        this.completed.push(s.building.id);
         s.building = null;
       }
     }
@@ -412,7 +476,7 @@ export class Colony {
       ring.push(s.stocks[r] - before[r]);
       if (ring.length > H) ring.splice(0, ring.length - H);
     }
-    s.last = { supplyKw: r1(supply), demandKw: r1(demand), cut, served: [...served, ...producing.values()].map(String), daylight, labour: r1(labour) };
+    s.last = { supplyKw: r1(supply), demandKw: r1(demand), cut, served: [...served, ...producing.values()].map(String), daylight, labour: r1(labour), crews, builders: buildMachines };
     s.hour++;
   }
 
@@ -483,9 +547,22 @@ export class Colony {
       buildings: s.buildings.map((b) => {
         const d = this.defs.buildings[b.type];
         const draws = Boolean(d.class && d.drawKw);
-        return { id: b.id, type: b.type, label: labelOf(b.type), dept: d.dept, enabled: b.enabled, powered: b.enabled && (!draws || served.has(b.id)), producing: served.has(b.id) && Boolean(d.out) };
+        const producing = Boolean(d.out) && (s.last.crews[b.id] !== undefined);
+        return {
+          id: b.id, type: b.type, label: labelOf(b.type), dept: d.dept, enabled: b.enabled,
+          powered: b.enabled && (!draws || served.has(b.id)), producing,
+          crew: s.last.crews[b.id] ?? 0, crewNeeded: d.crew ?? 0, drawKw: d.drawKw ?? 0, in: d.in ?? {}, out: d.out ?? {}, permanent: Boolean(d.permanent), note: noteOf(b.type),
+        };
       }),
-      building: s.building ? { type: s.building.type, label: labelOf(s.building.type), hoursLeft: r1(s.building.hoursLeft), hours: this.defs.buildings[s.building.type].buildHours ?? 0 } : null,
+      building: s.building ? { id: s.building.id, type: s.building.type, label: labelOf(s.building.type), hoursLeft: r1(s.building.hoursLeft), hours: this.defs.buildings[s.building.type].buildHours ?? 0, builders: s.last.builders } : null,
+      catalog: Object.entries(this.defs.buildings)
+        .filter(([, d]) => !d.permanent && d.cost)
+        .map(([type, d]) => ({
+          type, label: labelOf(type), dept: d.dept, cost: d.cost ?? {}, buildHours: d.buildHours ?? 0, drawKw: d.drawKw ?? 0,
+          genKw: d.powerGenKwPeak ?? d.powerGenKw ?? 0, crew: d.crew ?? 0, in: d.in ?? {}, out: d.out ?? {},
+          affordable: Object.entries(d.cost ?? {}).every(([r, v]) => s.stocks[r as Stock] >= v),
+          blocked: this.blocked(type), note: noteOf(type),
+        })),
       trust: r1(s.trust),
       influence: r1(s.influence),
       reactor: r1(s.reactor * 100) / 100,
@@ -503,7 +580,11 @@ export function loadColonyState(path: string): ColonyState | null {
   try {
     if (!existsSync(path)) return null;
     const s = JSON.parse(readFileSync(path, "utf8")) as ColonyState;
-    return s && s.version === 1 && typeof s.hour === "number" ? s : null;
+    if (!(s && s.version === 1 && typeof s.hour === "number")) return null;
+    if (s.building && !s.building.id) s.building = null; // saved before sites had map ids
+    s.last.crews ??= {};
+    s.last.builders ??= 0;
+    return s;
   } catch {
     return null; // a damaged save starts a new colony
   }
@@ -515,13 +596,17 @@ export function saveColonyState(path: string, state: ColonyState): void {
   renameSync(`${path}.tmp`, path);
 }
 
-// Drives a Colony in real time, publishes it through the World and saves it.
+// Drives a Colony in real time, publishes it through the World, saves it, and keeps the
+// map (the layout) in step: construction sites are map buildings, two idle machines go and
+// build, and finished buildings become homes for the characters that prefer them.
 export class ColonyRunner {
   readonly colony: Colony;
   private world: World;
   private path: string | null;
   private timer: NodeJS.Timeout | null = null;
   private secondsPerHour: number;
+  // Saves the layout and lets the source know (main.ts wires it to the base file and Hermes).
+  onLayout: ((layout: BaseLayout) => Promise<void> | void) | null = null;
 
   constructor(colony: Colony, world: World, path: string | null, secondsPerHour = colony.defs.time.realSecondsPerHour) {
     this.colony = colony;
@@ -531,8 +616,148 @@ export class ColonyRunner {
   }
 
   start(): void {
+    this.syncWithLayout();
     this.publish();
     this.schedule();
+  }
+
+  // Called whenever the layout changed outside the economy (Build mode edits, resets).
+  syncWithLayout(): void {
+    const c = this.colony;
+    const l = this.world.layout;
+    c.setMachines(l.agents.filter((a) => a.skill !== "orchestrator").length);
+    c.syncBuildings(l);
+    // A site the map lost (reset, removal) is abandoned without refund; a site the map
+    // still shows but the colony forgot is removed from the map.
+    const site = c.state.building;
+    if (!site && l.buildings.some((b) => b.status === "building")) {
+      const next = cloneLayout(l);
+      next.buildings = next.buildings.filter((b) => b.status !== "building");
+      void this.adoptLayout(next);
+    }
+  }
+
+  private async adoptLayout(next: BaseLayout): Promise<void> {
+    this.world.applyLayout(next);
+    try {
+      await this.onLayout?.(next);
+    } catch (e) {
+      this.world.logLine(`Could not save the base: ${e}`, "error");
+    }
+  }
+
+  // Builds a kind: pays, places the site on the map (next free slot of its department or
+  // the given spot) and sends two idle machines to build it.
+  build(type: string, x?: number, z?: number): void {
+    const c = this.colony;
+    const why = c.blocked(type);
+    if (why) throw new ColonyError(why);
+    const next = cloneLayout(this.world.layout);
+    const input: Record<string, unknown> = { label: labelOf(type), kind: type, model: KIND_MODEL[type], capability: KIND_DEPT[type], status: "building" };
+    if (x !== undefined && z !== undefined) Object.assign(input, { x, z });
+    let def;
+    try {
+      def = upsertBuilding(next, input);
+    } catch (e) {
+      throw new ColonyError(e instanceof Error ? e.message : String(e));
+    }
+    c.build(type, def.id);
+    void this.adoptLayout(next);
+    c.state.last.builders = this.assignBuilders(); // so the panel shows who went, before the first tick
+  }
+
+  cancelBuild(): void {
+    const site = this.colony.state.building;
+    this.colony.cancelBuild();
+    if (!site) return;
+    const next = cloneLayout(this.world.layout);
+    next.buildings = next.buildings.filter((b) => b.id !== site.id);
+    this.releaseBuilders(site.id);
+    void this.adoptLayout(next);
+  }
+
+  // A building removed in Build mode leaves the economy too.
+  removed(id: string): void {
+    this.colony.removeBuilding(id);
+    this.publish();
+    this.save();
+  }
+
+  canRemove(id: string): void {
+    const b = this.colony.state.buildings.find((x) => x.id === id);
+    if (b && this.colony.defs.buildings[b.type]?.permanent) throw new ColonyError(`${labelOf(b.type)} cannot be removed`);
+  }
+
+  // Reset base = a new colony.
+  reset(): void {
+    this.colony.state = Colony.initial(this.colony.defs);
+    this.syncWithLayout();
+    this.world.logLine("Sol 0: a new colony. Odyssey-7 is down; 24 colonists awake, 198 in cryo.", "warn");
+    this.publish();
+    this.save();
+  }
+
+  // Machines at the site this hour: idle ones are sent, ones a mission took are not chased.
+  private assignBuilders(): number {
+    const site = this.colony.state.building;
+    if (!site) return 0;
+    const there = this.world.layout.agents.filter((a) => {
+      const st = this.world.getAgent(a.id);
+      return st && st.state === "working" && st.location === site.id && st.detail === "construction";
+    });
+    let n = there.length;
+    for (const a of this.world.layout.agents) {
+      if (n >= 2) break;
+      if (a.skill === "orchestrator" || there.some((t) => t.id === a.id)) continue;
+      const st = this.world.getAgent(a.id);
+      if (!st || st.state !== "idle") continue;
+      this.world.setAgent(a.id, { state: "working", building: site.id, taskId: null, taskTitle: `Building the ${labelOf(site.type)}`, detail: "construction", progress: 0 });
+      n++;
+    }
+    return n;
+  }
+
+  private releaseBuilders(siteId: string): void {
+    for (const a of this.world.layout.agents) {
+      const st = this.world.getAgent(a.id);
+      if (st && st.detail === "construction" && st.location === siteId) this.world.setAgent(a.id, { state: "idle" });
+    }
+  }
+
+  // After a tick: site progress on the map, finished buildings adopted, characters move in.
+  private afterTick(): void {
+    const c = this.colony;
+    const site = c.state.building;
+    let next: BaseLayout | null = null;
+    if (site) {
+      const b = this.world.layout.buildings.find((x) => x.id === site.id);
+      const hours = c.defs.buildings[site.type].buildHours ?? 1;
+      const progress = Math.max(0, Math.min(1, 1 - site.hoursLeft / hours));
+      if (b && Math.round((b.progress ?? 0) * 100) !== Math.round(progress * 100)) {
+        next = cloneLayout(this.world.layout);
+        const nb = next.buildings.find((x) => x.id === site.id)!;
+        nb.progress = progress;
+      }
+      for (const a of this.world.layout.agents) {
+        const st = this.world.getAgent(a.id);
+        if (st && st.detail === "construction" && st.location === site.id) this.world.setAgent(a.id, { state: "working", building: site.id, progress });
+      }
+    }
+    for (const id of c.completed.splice(0)) {
+      next ??= cloneLayout(this.world.layout);
+      const b = next.buildings.find((x) => x.id === id);
+      if (!b) continue;
+      b.status = "built";
+      delete b.progress;
+      for (const a of next.agents) {
+        if (a.prefers === b.kind && a.home === "landing_module") {
+          a.home = id;
+          this.world.logLine(`${a.name} moves into the ${b.label}`, "info");
+        }
+      }
+      this.releaseBuilders(id);
+    }
+    if (next) void this.adoptLayout(next);
   }
 
   stop(): void {
@@ -550,17 +775,24 @@ export class ColonyRunner {
     }
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.colony.tick();
-      this.publish();
-      this.save();
+      this.step();
       this.schedule();
     }, (this.secondsPerHour * 1000) / speed);
     this.timer.unref?.();
   }
 
+  // One game hour, driven by the clock (or by tests).
+  step(): void {
+    const builders = this.assignBuilders();
+    this.colony.tick(builders);
+    this.afterTick();
+    this.publish();
+    this.save();
+  }
+
   // Runs a command against the colony, then publishes and saves. Errors are ColonyError.
-  command(fn: (c: Colony) => void): void {
-    fn(this.colony);
+  command(fn: (c: Colony, r: ColonyRunner) => void): void {
+    fn(this.colony, this);
     this.publish();
     this.save();
     this.schedule();

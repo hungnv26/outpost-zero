@@ -42,6 +42,7 @@ const PALETTE = ["#59ccff", "#ffe04d", "#8cf280", "#ff9940", "#ff80bf", "#d98cff
 
 var hud  # AgentHUD (styling helpers)
 var _layout = {}
+var _colony = {}  # the colony view: catalog, current site, stocks
 var _tab = "buildings"
 var _form = null  # {kind: "building"|"agent", data: {...}, editing: bool}
 var _body: VBoxContainer
@@ -106,6 +107,20 @@ func set_layout(layout: Dictionary):
 	_render()
 
 
+# The catalog and the site come from the economy; the list only re-renders when they change.
+var _colony_sig = ""
+
+
+func set_colony(c: Dictionary):
+	_colony = c
+	var sig = JSON.stringify([c.get("catalog", []).map(func(k): return [k["type"], k.get("affordable", false), k.get("blocked")]), c.get("building")])
+	if sig == _colony_sig:
+		return
+	_colony_sig = sig
+	if _tab == "buildings" and _form == null and visible:
+		_render()
+
+
 func form_failed():
 	if _form != null:
 		_form["sent"] = false
@@ -136,11 +151,16 @@ func _render():
 
 
 func _render_buildings():
-	var organise = hud._button("Organise base", true)
+	_render_catalog()
+	var organise = hud._button("Organise base")
 	organise.tooltip_text = "Move every building into its department's district"
 	organise.pressed.connect(func(): command.emit({"type": "layout.organise"}))
 	_body.add_child(organise)
 	_body.add_child(_hint("Each department has its own district on the map. New buildings go into theirs; Organise tidies everything back into place."))
+	var permanent = {}
+	for e in _colony.get("buildings", []):
+		if e.get("permanent", false):
+			permanent[e["id"]] = true
 	for dept in Departments.ORDER:
 		var items = _layout.get("buildings", []).filter(func(b): return Departments.of(b["capability"]) == dept)
 		var spots = _layout.get("spots", []) if dept == "meeting" else []
@@ -156,8 +176,9 @@ func _render_buildings():
 			var edit = _small("Edit")
 			edit.pressed.connect(func(): _open_building_form(def))
 			row.add_child(edit)
-			if not (b["id"] in ["command_centre", "human_approval"]):
+			if not permanent.has(b["id"]) and b.get("status", "built") != "building":
 				var del = _small("Remove")
+				del.tooltip_text = "Demolish; nothing is refunded"
 				del.pressed.connect(func(): command.emit({"type": "layout.building.remove", "id": def["id"]}))
 				row.add_child(del)
 		for sp in spots:
@@ -167,10 +188,58 @@ func _render_buildings():
 			var spot = sp
 			move.pressed.connect(func(): place.emit("spot", {"id": spot["id"]}, spot["label"]))
 			row.add_child(move)
-	var add = hud._button("+ New building", true)
-	add.pressed.connect(func(): _open_building_form(null))
-	_body.add_child(add)
 	_body.add_child(_hint("Agents drive to a building of the department whose work matches the tool they use, preferring their own home."))
+
+
+const DEPT_OF = {"Command": "command", "Research": "research", "Engineering": "code", "Knowledge": "knowledge", "Commons": "meeting"}
+
+
+# Everything that can be built, with its cost and what it does. Two idle machines build it
+# in its department's district, or where you click.
+func _render_catalog():
+	_body.add_child(_field_label("CATALOG"))
+	var site = _colony.get("building")
+	if site != null and not site.is_empty():
+		var row = _row(Color(1.0, 0.85, 0.5), "Building the %s" % site.get("label", ""), "%d of %d hours · %d machines on site" % [int(round(float(site.get("hours", 0)) - float(site.get("hoursLeft", 0)))), int(site.get("hours", 0)), int(site.get("builders", 0))])
+		var cancel = _small("Cancel")
+		cancel.pressed.connect(func(): command.emit({"type": "colony.cancel_build"}))
+		row.add_child(cancel)
+	var catalog = _colony.get("catalog", [])
+	if catalog.is_empty():
+		_body.add_child(_hint("The economy is not running, so nothing can be built."))
+		return
+	for dept_name in ["Engineering", "Knowledge", "Research", "Commons"]:
+		var items = catalog.filter(func(k): return k.get("dept", "") == dept_name)
+		if items.is_empty():
+			continue
+		var dept = DEPT_OF[dept_name]
+		_dept_header(dept, "%d to build" % items.size())
+		for k in items:
+			var cost = []
+			for r in k.get("cost", {}):
+				cost.append("%d %s" % [int(k["cost"][r]), r])
+			var sub = " · ".join(cost) + " · %d h" % int(k.get("buildHours", 0))
+			if float(k.get("genKw", 0)) > 0:
+				sub += " · +%d kW" % int(k["genKw"])
+			elif float(k.get("drawKw", 0)) > 0:
+				sub += " · %d kW" % int(k["drawKw"])
+			var row = _row(Departments.COLORS[dept], k["label"], sub)
+			row.tooltip_text = k.get("note", "")
+			var blocked = k.get("blocked")
+			var kind = k["type"]
+			var label = k["label"]
+			var build = _small("Build")
+			build.tooltip_text = "Into the next free slot of its district" if blocked == null else str(blocked)
+			build.disabled = blocked != null
+			build.pressed.connect(func(): command.emit({"type": "colony.build", "building": kind}))
+			row.add_child(build)
+			var spot = _small("Spot")
+			spot.tooltip_text = "Click where it should go" if blocked == null else str(blocked)
+			spot.disabled = blocked != null
+			spot.pressed.connect(func(): place.emit("colony_build", {"building": kind}, label))
+			row.add_child(spot)
+	_body.add_child(_hint("Buildings cost materials and parts up front. Two idle machines walk to the site and build it; a mission takes them away and the work waits."))
+	_body.add_child(_field_label("ON THE MAP"))
 
 
 # Who lives in a building (characters whose home it is).

@@ -52,7 +52,7 @@ test("a client that hangs up mid-request does not stop the adapter", async () =>
 
 test("buildings never take a spot's id; cancelling closes pending work", async () => {
   const l = cloneLayout(DEFAULT_LAYOUT);
-  const b = upsertBuilding(l, { label: "Rally Point", capability: "meeting" });
+  const b = upsertBuilding(l, { label: "Rally Point", kind: "storageDepot" });
   assert.notEqual(b.id, "rally_point");
 
   const world = new World("fake");

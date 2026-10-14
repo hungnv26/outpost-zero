@@ -65,6 +65,8 @@ var _tokens_label: Label
 var _sol_label: Label
 var _speed_buttons = {}  # speed -> Button
 var _colony = {}  # stat key -> {"value": Label, "trend": Label, "icon": Control}
+var _colony_view = {}  # the latest colony view (economy), by the adapter
+var _colony_buildings = {}  # building id -> its line in the colony view
 var _cost_label: Label
 var _conn_label: Label
 var _clock_label: Label
@@ -786,6 +788,13 @@ static func _per_sol(flow: float) -> String:
 func set_colony(c):
 	if c == null or _sol_label == null:
 		return
+	_colony_view = c
+	_colony_buildings.clear()
+	for b in c.get("buildings", []):
+		_colony_buildings[b["id"]] = b
+	if _build_panel != null:
+		_build_panel.set_colony(c)
+	_render_building_panel()
 	_sol_label.text = "Sol %d  %02d:00  %s" % [int(c.get("sol", 0)), int(c.get("hour", 0)), "day" if c.get("daylight", true) else "night"]
 	var speed = int(c.get("speed", 1))
 	for sp in _speed_buttons:
@@ -1280,6 +1289,7 @@ func _render_building_panel():
 	# rebuilding under the pointer would swallow a click on Approve).
 	var here_now = _agents.values().filter(func(a): return a.get("location", "") == b["id"] and not a.get("state", "") in ["idle", "complete"])
 	var sig_parts = [b["id"], b.get("model", ""), _layout.get("agents", []).filter(func(d): return d.get("home", "") == b["id"]).map(func(d): return d["name"])]
+	sig_parts.append([b.get("status", "built"), int(float(b.get("progress", 0.0)) * 100.0), _colony_buildings.get(b["id"], {}), _colony_view.get("building"), _colony_view.get("colonists", {}).get("waking", 0), _colony_view.get("reactor", 1.0), _colony_view.get("stocks", {}).get("medicine", 0), _colony_view.get("stocks", {}).get("parts", 0)])
 	for ap in _approvals.values():
 		sig_parts.append([ap["id"], ap.get("status", "")])
 	for a in here_now:
@@ -1292,6 +1302,7 @@ func _render_building_panel():
 	for c in v.body.get_children():
 		v.body.remove_child(c)
 		c.queue_free()
+	_render_economy_section(b, v.body)
 	# Human Approval: the pending request, decided right here.
 	if b["id"] == "human_approval":
 		for ap in _approvals.values():
@@ -1338,6 +1349,99 @@ func _render_building_panel():
 	var residents = _layout.get("agents", []).filter(func(d): return d.get("home", "") == b["id"]).map(func(d): return d["name"])
 	v.body.add_child(_title("RESIDENTS  %d" % residents.size(), "home"))
 	v.body.add_child(_muted_line(", ".join(residents) if not residents.is_empty() else "Nobody lives here yet; set it as a character's home in Build."))
+
+
+# What the economy says about the selected building: construction, power, rates, crew,
+# and the actions that belong here (switch off, wake colonists, repair the reactor).
+func _render_economy_section(b: Dictionary, body: VBoxContainer):
+	if b.get("status", "built") == "building":
+		var site = _colony_view.get("building", {})
+		body.add_child(_title("UNDER CONSTRUCTION", "repair"))
+		var p = float(b.get("progress", 0.0))
+		var bar = Ui.progress_bar(Ui.WARN, 5)
+		bar.value = p
+		body.add_child(bar)
+		if site != null and not site.is_empty():
+			body.add_child(_muted_line("%d of %d hours done · %d machines building" % [int(round(float(site.get("hours", 0)) - float(site.get("hoursLeft", 0)))), int(site.get("hours", 0)), int(site.get("builders", 0))]))
+			if int(site.get("builders", 0)) == 0:
+				body.add_child(_muted_line("No machine is free to build; they are on a mission or without power."))
+		var cancel = _button("Cancel (refund half)")
+		cancel.pressed.connect(func(): colony_command.emit({"type": "colony.cancel_build"}))
+		body.add_child(cancel)
+		return
+	var e = _colony_buildings.get(b["id"], {})
+	if e.is_empty():
+		return
+	body.add_child(_title("ECONOMY", "bolt"))
+	if e.get("note", "") != "":
+		body.add_child(_muted_line(e["note"]))
+	var status = "Powered"
+	var color = Ui.GOOD
+	if not e.get("enabled", true):
+		status = "Switched off"
+		color = MUTED
+	elif not e.get("powered", true):
+		status = "No power: cut by priority this hour"
+		color = Ui.BAD
+	elif e.get("producing", false):
+		status = "Producing"
+	elif not e.get("out", {}).is_empty():
+		status = "Idle: no crew, no inputs, or the store is full"
+		color = Ui.WARN
+	var line = HBoxContainer.new()
+	line.add_theme_constant_override("separation", 8)
+	line.add_child(_label(status, 13, color))
+	if float(e.get("drawKw", 0)) > 0:
+		line.add_child(_label("%d kW" % int(e["drawKw"]), 12, MUTED))
+	body.add_child(line)
+	var rate = _rate_text(e.get("in", {}), e.get("out", {}))
+	if rate != "":
+		body.add_child(_muted_line(rate))
+	if int(e.get("crewNeeded", 0)) > 0:
+		body.add_child(_muted_line("Crew %d of %d colonists" % [int(e.get("crew", 0)), int(e.get("crewNeeded", 0))]))
+	var row = HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var kind = e.get("type", "")
+	if kind == "cryoBay":
+		var waking = int(_colony_view.get("colonists", {}).get("waking", 0))
+		var med = float(_colony_view.get("stocks", {}).get("medicine", 0))
+		var wake = _button("Wake 8 (16 medicine)", true)
+		wake.disabled = waking > 0 or med < 16
+		wake.pressed.connect(func(): colony_command.emit({"type": "colony.wake", "count": 8}))
+		row.add_child(wake)
+		if waking > 0:
+			row.add_child(_label("Waking %d…" % waking, 12, MUTED))
+	elif kind == "landingModule":
+		var reactor = float(_colony_view.get("reactor", 1.0))
+		row.add_child(_label("Reactor at %d%%" % int(round(reactor * 100.0)), 13, Ui.GOOD if reactor >= 0.95 else Ui.WARN))
+		var fix = _button("Repair (4 parts)")
+		fix.disabled = reactor >= 0.999 or float(_colony_view.get("stocks", {}).get("parts", 0)) < 4
+		fix.pressed.connect(func(): colony_command.emit({"type": "colony.repair", "target": "reactor"}))
+		row.add_child(fix)
+	if not e.get("permanent", false):
+		var on = e.get("enabled", true)
+		var toggle = _button("Switch off" if on else "Switch on")
+		var id = b["id"]
+		toggle.pressed.connect(func(): colony_command.emit({"type": "colony.toggle", "id": id, "enabled": not on}))
+		row.add_child(toggle)
+	if row.get_child_count() > 0:
+		body.add_child(row)
+
+
+const UNITS = {"water": "L", "food": "meals", "salvage": "kg salvage", "materials": "kg materials", "parts": "parts", "medicine": "doses", "artifacts": "artifacts", "data": "data"}
+
+
+static func _rate_text(inputs: Dictionary, outputs: Dictionary) -> String:
+	var fmt = func(d: Dictionary) -> String:
+		var parts = []
+		for k in d:
+			var v = float(d[k])
+			parts.append("%s %s" % [("%d" % int(v)) if is_equal_approx(v, round(v)) else ("%.2f" % v).rstrip("0"), UNITS.get(k, k)])
+		return " + ".join(parts)
+	if outputs.is_empty():
+		return ""
+	var out = fmt.call(outputs) + " an hour"
+	return (fmt.call(inputs) + " → " + out) if not inputs.is_empty() else out
 
 
 # ---------- bottom left: minimap buttons ----------
