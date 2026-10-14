@@ -173,6 +173,8 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 export class Colony {
   readonly defs: EconomyDefs;
   state: ColonyState;
+  // The real clock (set by the runner when it overrides the design's seconds per hour).
+  secondsPerHour: number | null = null;
   // Lines for the game's feed, drained by the runner after each tick/command.
   events: { text: string; level: "info" | "warn" | "error" }[] = [];
   // Ids of sites finished in the last tick (the runner updates the map).
@@ -701,7 +703,7 @@ export class Colony {
       influence: r1(s.influence),
       reactor: r1(s.reactor * 100) / 100,
       chapter: s.chapter,
-      realSecondsPerHour: this.defs.time.realSecondsPerHour,
+      realSecondsPerHour: this.secondsPerHour ?? this.defs.time.realSecondsPerHour,
     };
   }
 
@@ -759,6 +761,7 @@ export class ColonyRunner {
     this.world = world;
     this.path = path;
     this.secondsPerHour = secondsPerHour;
+    colony.secondsPerHour = secondsPerHour;
   }
 
   start(): void {

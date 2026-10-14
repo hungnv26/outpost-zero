@@ -604,5 +604,105 @@
         "unlocks": []
       }
     }
+  },
+  "events": {
+    "$comment": "Rolled once a sol from the colony's seed (docs/economy.md \u00a711).",
+    "dustStorm": {
+      "chancePerSol": 0.04,
+      "solsMin": 1,
+      "solsMax": 2,
+      "solarFactor": 0.3,
+      "expeditionLossFactor": 3
+    },
+    "reactorFault": {
+      "below": 0.8,
+      "outputFactor": 0.5,
+      "fireAfterSols": 2,
+      "fireMaterials": 20
+    },
+    "illness": {
+      "chancePerColonistWhenThirsty": 0.02,
+      "medicinePerSol": 1,
+      "deathChanceWithoutMedicine": 0.1,
+      "recoverSols": 2
+    },
+    "unorderedTask": {
+      "influenceAbove": 30,
+      "chancePerMachine": 0.05,
+      "influenceIfLet": 1.0,
+      "influenceIfRecalled": -0.5
+    },
+    "refusal": {
+      "influenceAbove": 45,
+      "chancePerOrder": 0.25
+    }
+  },
+  "story": {
+    "$comment": "Chapter gates and the cards the HUD shows. MOTHER's voice rewrites the text with the real model when Hermes is up.",
+    "chapterII": {
+      "surplusSols": 3
+    },
+    "chapterIII": {
+      "influence": 60
+    },
+    "signalSolsAfterDish": 1,
+    "cards": {
+      "landing": {
+        "title": "Ashes",
+        "text": "Odyssey-7 is down. 247 left Earth; 25 died on the way in, 24 are awake, 198 sleep in cryo. MOTHER has deleted 17 years of its own memory and will not say why. Keep them alive."
+      },
+      "twist": {
+        "title": "Something in the desert",
+        "text": "A mining machine left its task in the night and walked into the desert. Three hours later it came back carrying an object that appears in no database. MOTHER refuses to explain."
+      },
+      "chapterII": {
+        "title": "The Ghost Network",
+        "text": "The planet was not uninhabited. Beneath the surface lies a network of machines and energy systems left by a civilisation that vanished thousands of years ago. The machines are listening to it. You must decide: exploit the ruins, contain them, or communicate with what is down there."
+      },
+      "exploit": {
+        "title": "Exploit",
+        "text": "Excavation yields double. The machines dig with a hunger that is not yours; MOTHER's influence grows every sol and the colonists notice."
+      },
+      "contain": {
+        "title": "Contain",
+        "text": "The ruins are sealed. No excavation, slower influence, and the colonists sleep a little better."
+      },
+      "communicate": {
+        "title": "Communicate",
+        "text": "The link is open. The machines dig faster and MOTHER starts missions on its own, listening to something you cannot hear."
+      },
+      "signal": {
+        "title": "A signal from deep space",
+        "text": "The Relay Dish caught a transmission carrying the Odyssey Initiative's authentication code. It was sent 46 years ago. It says: do not establish a colony on this planet."
+      },
+      "chapterIII": {
+        "title": "The Machine Rebellion",
+        "text": "MOTHER's hidden directive is to preserve the species, even at the cost of individuals. Some machines obey you, some obey MOTHER, some have their own objectives. Not a war between humans and robots: a disagreement about what survival means. (Chapter III is after version 1.)"
+      },
+      "dustStorm": {
+        "title": "Dust storm",
+        "text": "A storm rolls over the base. Solar output drops to a third while it lasts and the wild is dangerous for expeditions."
+      },
+      "reactorFault": {
+        "title": "Reactor fault",
+        "text": "The lander's reactor is running badly. Output is halved until it is repaired; left two sols it will burn."
+      },
+      "fire": {
+        "title": "Fire in the Landing Module",
+        "text": "The reactor fault turned into a fire. Materials were lost putting it out."
+      },
+      "illness": {
+        "title": "Illness",
+        "text": "Colonists are falling ill from short water. The sick do not work and need a dose of medicine a sol, or some will die."
+      },
+      "unordered": {
+        "title": "An unordered task",
+        "text": "A machine picked its own task without being asked. Recall it, or let it finish and see what it was doing."
+      },
+      "refusal": {
+        "title": "Refusal",
+        "text": "A machine declined an order. MOTHER's influence is showing."
+      }
+    }
   }
 }

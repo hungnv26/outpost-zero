@@ -90,6 +90,10 @@ var _cards = {}
 var _input: LineEdit
 var _deploy: Button
 var _abort: Button
+var _arena_panel: PanelContainer
+var _arena_rows: VBoxContainer
+var _arena_title: Label
+var _arena_sub: Label
 var _approval_panel: PanelContainer
 var _approval_text: Label
 var _approval_id = ""
@@ -149,6 +153,7 @@ func _ready():
 		snapshots = SnapshotsScript.new()
 		add_child(snapshots)
 	_build_top_bar()
+	_build_arena_panel()
 	_build_mission_panel()
 	_build_departments_panel()
 	_build_roster()
@@ -1496,6 +1501,84 @@ static func _rate_text(inputs: Dictionary, outputs: Dictionary) -> String:
 		return ""
 	var out = fmt.call(outputs) + " an hour"
 	return (fmt.call(inputs) + " → " + out) if not inputs.is_empty() else out
+
+
+# ---------- top centre: the match scoreboard (Arena) ----------
+
+
+const TEAM_COLORS = {"A": Color(0.36, 0.68, 1.0), "B": Color(1.0, 0.55, 0.3), "C": Color(0.5, 0.9, 0.55), "D": Color(0.85, 0.6, 1.0)}
+
+
+func _build_arena_panel():
+	_arena_panel = _panel(BG_SOLID)
+	_arena_panel.set_anchors_and_offsets_preset(PRESET_CENTER_TOP)
+	_arena_panel.offset_top = TOP_H + 14
+	_arena_panel.offset_left = -300
+	_arena_panel.offset_right = 300
+	_arena_panel.visible = false
+	add_child(_arena_panel)
+	var v = VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	_arena_panel.add_child(v)
+	var head = _title("MATCH", "mission")
+	_arena_title = _label("", 13, TEXT)
+	_arena_title.add_theme_font_override("font", Ui.bold())
+	head.add_child(_arena_title)
+	v.add_child(head)
+	_arena_sub = _label("", 12, MUTED)
+	v.add_child(_arena_sub)
+	_arena_rows = VBoxContainer.new()
+	_arena_rows.add_theme_constant_override("separation", 2)
+	v.add_child(_arena_rows)
+
+
+# The scoreboard: every number is the referee's (docs/arena.md): colony value, colonists
+# awake, tokens spent and the model's average latency per decision.
+func set_arena(a):
+	if a == null or a.is_empty() or a.get("status", "lobby") == "lobby":
+		_arena_panel.visible = false
+		return
+	_arena_panel.visible = not replay_active
+	_arena_title.text = "%s · %s · sol %d / %d" % [str(a.get("mode", "")).to_upper(), str(a.get("objectiveText", "")), int(a.get("sol", 0)), int(a.get("sols", 0))]
+	var r = a.get("result")
+	if r != null and not r.is_empty():
+		_arena_sub.text = "Over: %s · winner %s" % [r.get("reason", ""), r.get("winner") if r.get("winner") != null else "none"]
+		_arena_sub.add_theme_color_override("font_color", Ui.WARN)
+	else:
+		_arena_sub.text = "Running · this window is team %s" % a.get("team", "")
+		_arena_sub.add_theme_color_override("font_color", MUTED)
+	for c in _arena_rows.get_children():
+		_arena_rows.remove_child(c)
+		c.queue_free()
+	var board = a.get("scoreboard", [])
+	var best = -1e18
+	for e in board:
+		best = max(best, float(e.get("value", 0)))
+	for e in board:
+		var row = HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var team = str(e.get("team", "?"))
+		var chip = ColorRect.new()
+		chip.color = TEAM_COLORS.get(team, ACCENT)
+		chip.custom_minimum_size = Vector2(10, 10)
+		chip.size_flags_vertical = SIZE_SHRINK_CENTER
+		row.add_child(chip)
+		var lead = float(e.get("value", 0)) >= best and board.size() > 1
+		var name_l = _label("%s  %s" % [team, str(e.get("model", ""))], 13, Ui.GOOD if lead else TEXT)
+		name_l.custom_minimum_size = Vector2(200, 0)
+		name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		row.add_child(name_l)
+		row.add_child(_label("value %d" % int(e.get("value", 0)), 12, TEXT))
+		row.add_child(_label("%d awake" % int(e.get("awake", 0)), 12, MUTED))
+		row.add_child(_label("%d kTok" % int(round(float(e.get("tokens", 0)) / 1000.0)), 12, MUTED))
+		var lat = e.get("avgLatencyS")
+		row.add_child(_label(("%.1f s" % float(lat)) if lat != null else "–", 12, MUTED))
+		var st = str(e.get("status", ""))
+		if st == "frozen":
+			row.add_child(_label("frozen", 12, Ui.BAD))
+		elif st == "finished":
+			row.add_child(_label("done", 12, MUTED))
+		_arena_rows.add_child(row)
 
 
 # ---------- bottom left: minimap buttons ----------

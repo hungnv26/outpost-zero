@@ -5,6 +5,7 @@ import {
   type Agent,
   type AgentState,
   type Approval,
+  type ArenaInfo,
   type BuildingId,
   type LocationId,
   type LogLine,
@@ -66,6 +67,7 @@ export class World extends EventEmitter {
   private log: LogLine[] = [];
   private recordings = new Map<string, Replay>();
   history: MissionRecord[] = [];
+  arena: ArenaInfo | null = null;
   source: string;
   missionControlUrl: string | null = null;
   readonly now: () => number;
@@ -130,6 +132,7 @@ export class World extends EventEmitter {
       links: { missionControl: this.missionControlUrl },
       layout: this.layout,
       history: this.history,
+      arena: this.arena,
     };
   }
 
@@ -274,6 +277,11 @@ export class World extends EventEmitter {
     this.approvals.set(a.id, next);
     this.emitEvent({ type: "approval.upsert", approval: next });
     return next;
+  }
+
+  setArena(info: ArenaInfo | null): void {
+    this.arena = info;
+    this.emitEvent({ type: "arena.update", arena: info });
   }
 
   setResources(patch: Partial<Resources>): void {

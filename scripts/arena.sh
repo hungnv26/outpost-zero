@@ -19,7 +19,7 @@ PROVIDERS=infra/providers.env
 [[ -f $PROVIDERS ]] && { set -a; source "$PROVIDERS"; set +a; }
 
 # Per-team ports: Hermes 8101.., Arena API 8772, 8782.., adapter 8771, 8781.. (the game talks to 8771).
-team_index() { local t=${1^^}; echo $(( $(printf '%d' "'${t:0:1}") - 65 )); }
+team_index() { local t; t=$(echo "$1" | tr 'a-z' 'A-Z'); echo $(( $(printf '%d' "'${t:0:1}") - 65 )); }  # bash 3.2 on macOS: no ${1^^}
 hermes_port() { echo $((8101 + $(team_index "$1"))); }
 adapter_port() { echo $((8771 + 10 * $(team_index "$1"))); }
 arena_port() { echo $((8772 + 10 * $(team_index "$1"))); }
@@ -62,6 +62,7 @@ PY
 compose() { # team, args...
   local team=$1; shift
   HERMES_PREFIX=$(prefix "$team") HERMES_PORT=$(hermes_port "$team") HERMES_DASHBOARD_PORT=$((9120 + $(team_index "$team"))) \
+  HERMES_ENV_FILE="$ROOT/infra/teams/$team/hermes.env" \
   ARENA_URL="http://host.docker.internal:$(arena_port "$team")" ARENA_TEAM=$team \
   OUTPOST_ZERO_ROOT="$ROOT" docker compose -p "$(prefix "$team")" -f vendor/hermes-synapse/docker-compose.yml -f infra/hermes.override.yml "$@"
 }
@@ -74,7 +75,6 @@ case "$cmd" in
       team=${spec%%=*}; pm=${spec#*=}
       echo "==> Team $team: $pm"
       team_env "$team" "$pm"
-      cp "infra/teams/$team/hermes.env" vendor/hermes-synapse/.env
       compose "$team" up -d > ".data/logs/compose-$team.log" 2>&1 || { cat ".data/logs/compose-$team.log"; exit 1; }
       wait_http "http://127.0.0.1:$(hermes_port "$team")/api/status" "Hermes $team" 180
       port=$(adapter_port "$team")

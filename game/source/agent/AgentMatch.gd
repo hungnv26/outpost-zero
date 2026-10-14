@@ -658,6 +658,7 @@ func _on_message(msg):
 			if world.has("layout"):
 				_apply_layout(world["layout"])
 			_hud.apply_snapshot(world)
+			_hud.set_arena(world.get("arena"))
 			_apply_colony(world.get("resources", {}).get("colony"))
 			_hud.set_connection(true, world.get("source", ""))
 			for a in world.get("agents", []):
@@ -674,6 +675,8 @@ func _on_message(msg):
 				_mission_status = m.get("status", "")  # a re-sent finished mission isn't "finished now"
 		"layout.update":
 			_apply_layout(msg["layout"])
+		"arena.update":
+			_hud.set_arena(msg.get("arena"))
 		"agent.removed":
 			_remove_agent(msg.get("agentId", ""))
 		"error":

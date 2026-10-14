@@ -148,7 +148,7 @@ export function startServer(world: World, source: Source, port: number, host = "
     const path = (req.url ?? "").split("?")[0];
     if (req.method === "GET" && path === "/health") return json(200, { ok: true, source: source.name, clients: clients.size });
     if (req.method === "GET" && path === "/state") return json(200, { seq: world.currentSeq, world: world.snapshot() });
-    if (req.method === "GET" && path === "/arena") return json(200, { match: arena?.match ?? null, observation: arena?.match ? arena.observation() : null });
+    if (req.method === "GET" && path === "/arena") return json(200, { match: arena?.match ?? null, info: arena?.info() ?? null, observation: arena?.match ? arena.observation() : null });
     if (req.method === "POST" && (path === "/arena/start" || path === "/arena/stop")) {
       if (!arena) return json(404, { error: "no arena" });
       let body = "";

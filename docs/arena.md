@@ -190,6 +190,30 @@ both.
   *in progress* stops it; the result is posted as a comment and the task is marked done.
   Phase 4 has one team, `A`; team agents arrive with Phase 5.
 
+## 8b. What Phase 5 built, and one change to the spec
+
+- **One stack per team.** `scripts/arena.sh up A=ollama:agentrts-qwen3 B=...` writes
+  `infra/teams/<T>/hermes.env` from the example and the `provider:model` spec (keys from the
+  gitignored `infra/providers.env`), starts a Docker Compose project per team
+  (`outpostzero-b`, Hermes on 8102, its own database, Qdrant, sandbox and SearXNG, its own env
+  file mounted) and an adapter per team (ports 8781 / 8782 for B, layout and colony under
+  `.data/teams/B/`). Team A is the normal game stack from `scripts/start.sh`.
+- **The director.** `tools/match_director.mjs start --teams A,B --mode race --objective
+  awakening --sols 60 --budget 2000000 --seed 4217` starts the same match on every team's
+  adapter from one seed, polls them, pushes the combined scoreboard to each so every window
+  shows all teams, ends the match (race: the first to the objective stops the others; timed:
+  highest colony value), keeps an Elo per model in `.data/elo.json`, saves
+  `.data/matches/<id>.json` and posts the result to Mission Control as a done task.
+- **The scoreboard** is a panel under the top bar in every game window (`arena.update` events):
+  mode, objective, sol, and per team the model, colony value, colonists awake, tokens and
+  average latency, the leader in green, frozen teams marked.
+- **Change to §9:** the spec asked for all bases on one map. Phase 5 keeps one base per
+  adapter and per game window, each with the full scoreboard, because a team is a whole
+  stack (its own Hermes, agents, layout and colony) and merging two worlds into one scene
+  would have meant a second rendering path for agents that are not the window's own. A
+  spectator opens one window per team (`OUTPOST_ZERO_WS=ws://127.0.0.1:8781/world godot
+  --path game` for B) and watches them side by side. The side-by-side replay stays deferred.
+
 ## 9. The spectator view
 
 The game shows all bases on one map, each team's characters and banners in its colour. The top

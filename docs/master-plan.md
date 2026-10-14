@@ -151,7 +151,14 @@ Hook the agents' real work into the numbers.
   setting a department to Autonomous makes the next mission start without Deploy, and
   influence rises as economy.md says.
 
-### Phase 4: Arena, one team against the clock (3 sessions)
+### Phase 4: Arena, one team against the clock (3 sessions) — DONE 2026-10-15
+
+Evidence: a Mission Control task with `metadata.arena` started a 12-sol timed match for team A;
+the Governor (a Hermes sub-agent on the local model with the `colony` skill) played 18 rounds
+through the plugin's `colony_*` tools against the Arena API, every action validated, logged and
+timed by the referee (1 accepted, 1 refused, 23.7 s average latency, 9 kTok); the result was
+posted as a comment and the task marked done. 35 adapter tests cover the referee, the window,
+the budget freeze, race and timed endings and the token-protected API.
 
 Everything the arena needs before a second team exists.
 
@@ -164,7 +171,16 @@ Everything the arena needs before a second team exists.
 - **Done when:** the local model plays a 20-sol Timed match on its own through the tools, every
   action is validated and logged with latency, and the result lands in Mission Control.
 
-### Phase 5: Arena, teams (4 sessions)
+### Phase 5: Arena, teams (4 sessions) — DONE 2026-10-15 (local models only)
+
+Evidence: `scripts/arena.sh up B=ollama:agentrts-qwen3` brought up a second Hermes project
+(8102) and adapter (8781/8782) with its own env file, layout and colony; `tools/match_director.mjs`
+ran an 8-sol timed match A vs B from one seed, pushed the combined scoreboard to both windows
+(`docs/screenshots/arena-two-teams.jpg`), declared A the winner (value 1869 vs 1208), wrote
+`.data/elo.json` and `.data/matches/<id>.json`, and posted the result to Mission Control.
+Left out: the frontier-model team, because no provider key is configured on this machine;
+`arena.sh up B=anthropic:claude-opus-4-1` is ready for `infra/providers.env`. Deviation from
+the spec: one base per window with the full scoreboard, not all bases on one map (arena.md §8b).
 
 - Multi-source adapter: one `HermesSource` per team with team-tagged events; one colony per
   team from the same seed.

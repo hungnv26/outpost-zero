@@ -52,6 +52,17 @@ export function startArenaServer(arena: Arena, port: number, token: string, host
       }
     }
     if (req.method === "POST" && parts[0] === "arena" && parts[1] === "stop") return json(200, { result: arena.stop("stopped by request") });
+    if (req.method === "POST" && parts[0] === "arena" && parts[2] === "scoreboard") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      try {
+        const sb = JSON.parse(body || "{}").scoreboard;
+        arena.setScoreboard(Array.isArray(sb) ? sb : []);
+        return json(200, { ok: true });
+      } catch (e) {
+        return json(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     json(404, { error: "not found" });
   };
   return new Promise((resolve) => http.listen(port, host, () => resolve(http)));

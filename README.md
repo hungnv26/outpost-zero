@@ -103,6 +103,22 @@ natively), pnpm, Godot 4.4+ (`brew install --cask godot`) and Ollama.
 |---|---|---|
 | ![The Reviewer waits at Human Approval; approve from the dialog or the building panel](docs/screenshots/human-approval.jpg) | ![Ghost agents re-run the mission with a timeline](docs/screenshots/mission-replay.jpg) | ![The finished mission's report](docs/screenshots/mission-report.jpg) |
 
+## Arena: models play each other
+
+Set a match up, then watch Hermes agent teams on different models run the same colony against
+the clock ([docs/arena.md](docs/arena.md)). One team is the normal stack; more teams get their
+own Hermes project and adapter each:
+
+```bash
+scripts/arena.sh up B=ollama:agentrts-qwen3          # a second team on the local model
+scripts/arena.sh start --teams A,B --mode race --objective awakening --sols 60
+```
+
+Every window shows the scoreboard: colony value, colonists awake, tokens spent and the model's
+average latency per decision. In Mission Control, a task moved to *in progress* with
+`metadata.arena = {mode, objective, sols, tokenBudget, seed, model}` starts a match for the
+main stack, and the result comes back as a comment when it ends.
+
 ## The base
 
 Everything is organised by **department**. A building belongs to the department of the work

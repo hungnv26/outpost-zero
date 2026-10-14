@@ -92,8 +92,33 @@ export interface LogLine {
   agentId: string | null;
 }
 
+export interface ScoreEntry {
+  team: string;
+  model: string;
+  value: number;
+  awake: number;
+  tokens: number;
+  avgLatencyS: number | null;
+  status: string; // running | finished | frozen
+  color?: string;
+}
+
+export interface ArenaInfo {
+  id: string;
+  status: "lobby" | "running" | "finished";
+  mode: string;
+  objective: string;
+  objectiveText: string;
+  sols: number;
+  sol: number;
+  team: string;
+  scoreboard: ScoreEntry[];
+  result: { winner: string | null; reason: string } | null;
+}
+
 export interface WorldSnapshot {
   contract: number;
+  arena?: ArenaInfo | null;
   source: string; // "fake" | "hermes"
   mission: Mission | null;
   agents: Agent[];
@@ -131,6 +156,7 @@ export type ServerEvent =
   | { type: "replay"; replay: Replay | null }
   | { type: "layout.update"; layout: BaseLayout }
   | { type: "agent.removed"; agentId: string }
+  | { type: "arena.update"; arena: ArenaInfo | null }
   | { type: "error"; message: string };
 
 export type ServerMessage = ServerEvent & { seq: number };

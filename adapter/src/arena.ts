@@ -3,7 +3,7 @@
 // the token budget, scores the colony, and ends the match on its objective or its last sol.
 import { EventEmitter } from "node:events";
 import { Colony, ColonyError, type ColonyRunner, type ColonyView, DEPTS } from "./economy.ts";
-import type { ServerMessage } from "./contract.ts";
+import type { ArenaInfo, ScoreEntry, ServerMessage } from "./contract.ts";
 import type { World } from "./world.ts";
 
 export type Mode = "race" | "timed";
@@ -81,6 +81,8 @@ export class Arena extends EventEmitter {
   private seq = 0;
   private roundStartedAt: number | null = null;
   private govTokens = 0;
+  // Other teams' scores, set by the match director (tools/match_director.mjs).
+  private others: ScoreEntry[] = [];
 
   constructor(runner: ColonyRunner, world: World) {
     super();
@@ -91,6 +93,51 @@ export class Arena extends EventEmitter {
 
   get colony(): Colony {
     return this.runner.colony;
+  }
+
+  // The scoreboard the game shows: this team first, then what the director reports.
+  myScore(): ScoreEntry {
+    const m = this.match;
+    const c = this.runner.colony;
+    const acts = m?.actions ?? [];
+    const lat = acts.filter((a) => a.latencyS !== null).map((a) => a.latencyS as number);
+    return {
+      team: m?.config.team ?? "A",
+      model: m?.config.model ?? "",
+      value: colonyValue(c),
+      awake: c.state.awake,
+      tokens: this.tokensUsed(),
+      avgLatencyS: lat.length ? Math.round((lat.reduce((a, b) => a + b, 0) / lat.length) * 10) / 10 : null,
+      status: m ? (m.status === "running" && m.frozen ? "frozen" : m.status) : "lobby",
+    };
+  }
+
+  setScoreboard(entries: ScoreEntry[]): void {
+    const mine = this.match?.config.team ?? "A";
+    this.others = entries.filter((e) => e.team !== mine);
+    this.publishInfo();
+  }
+
+  info(): ArenaInfo | null {
+    const m = this.match;
+    if (!m) return null;
+    const v = this.runner.colony.view();
+    return {
+      id: m.id,
+      status: m.status,
+      mode: m.config.mode,
+      objective: m.config.objective,
+      objectiveText: OBJECTIVES[m.config.objective].describe,
+      sols: m.config.sols,
+      sol: v.sol,
+      team: m.config.team,
+      scoreboard: [this.myScore(), ...this.others],
+      result: m.result ? { winner: m.result.winner, reason: m.result.reason } : null,
+    };
+  }
+
+  private publishInfo(): void {
+    this.world.setArena(this.info());
   }
 
   // The Governor's decision round: actions that arrive while it thinks get its latency.
@@ -146,6 +193,7 @@ export class Arena extends EventEmitter {
     this.world.logLine(`Match ${this.match.id}: ${config.mode} · ${OBJECTIVES[config.objective].name} · ${config.sols} sols · ${Math.round(config.tokenBudget / 1000)} kTok for team ${config.team} (${config.model})`, "warn");
     this.runner.command((c) => c.setSpeed(c.state.speed === 0 ? 1 : c.state.speed));
     this.emit("match", this.match);
+    this.publishInfo();
     return this.match;
   }
 
@@ -280,6 +328,7 @@ export class Arena extends EventEmitter {
       match.hour = hour;
       match.hourActions = 0;
       this.emit("hour", hour);
+      this.publishInfo();
     }
     const obj = OBJECTIVES[match.config.objective];
     if (match.config.mode === "race" && obj.check(this.colony)) this.finish(`${obj.name}: ${obj.describe}`, true);
@@ -303,6 +352,7 @@ export class Arena extends EventEmitter {
     m.result = result;
     this.world.logLine(`Match ${m.id} over: ${reason}. Team ${m.config.team} value ${value}, ${c.state.awake} awake, ${Math.round(result.placings[0].tokens / 1000)} kTok.`, "warn");
     this.emit("finished", result);
+    this.publishInfo();
     return result;
   }
 }

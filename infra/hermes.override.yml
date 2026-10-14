@@ -20,7 +20,7 @@ services:
       - ./backend:/app/backend
       - ./hermes_sdk:/app/hermes_sdk
       - ./scripts:/app/scripts
-      - ./.env:/app/.env:ro # agents' shell commands run in the sandbox (plugin.py), and nothing may rewrite keys
+      - ${HERMES_ENV_FILE:-./.env}:/app/.env:ro # per-team file for Arena teams; agents' shell commands run in the sandbox (plugin.py), and nothing may rewrite keys
       - sandbox_data:/app/backend/data/sandbox
       - ${OUTPOST_ZERO_ROOT:-../..}/infra/hermes-plugin:/app/backend/agentrts:ro
     depends_on:
