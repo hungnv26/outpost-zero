@@ -35,6 +35,7 @@ Env override for the game's world feed: `OUTPOST_ZERO_WS`. Compose root override
 
 ## Design docs
 
+- `docs/master-plan.md`: the authority on phases, scope and decisions. Read it before any build work.
 - `docs/story.md`: the storyline (Odyssey-7, MOTHER, the ruins, four endings).
 - `docs/arena.md`: match mode where teams of Hermes agents on different frontier models play the same colony.
 - `docs/economy.md`: the economy system; numbers in `design/economy.json`; balance check
