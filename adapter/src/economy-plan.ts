@@ -10,13 +10,13 @@ export const PLAN: { b: string; when: (s: ColonyState) => boolean }[] = [
   { b: "hydroponics", when: () => true },
   { b: "waterExtractor", when: () => true },
   { b: "batteryBank", when: () => true },
+  { b: "researchLab", when: () => true }, // data gates everything after this
   { b: "fabricator", when: (s) => s.stocks.materials >= 90 },
   { b: "hydroponics", when: (s) => s.awake >= 30 },
   { b: "waterExtractor", when: (s) => s.awake >= 30 },
   { b: "medBay", when: () => true },
   { b: "solarArray", when: () => true },
   { b: "storageDepot", when: () => true },
-  { b: "researchLab", when: () => true },
   { b: "waterExtractor", when: (s) => s.awake >= 40 },
   { b: "hydroponics", when: (s) => s.awake >= 48 },
   { b: "habitat", when: (s) => s.awake >= 40 },
@@ -42,7 +42,9 @@ export function playDefaultPlan(colony: Colony, sols: number, onSol: ((c: Colony
     if (!s.building && planIdx < PLAN.length) {
       const p = PLAN[planIdx];
       const d = D.buildings[p.b];
-      if (p.when(s) && Object.entries(d.cost ?? {}).every(([r, v]) => s.stocks[r as keyof typeof s.stocks] >= v)) {
+      const why = colony.blocked(p.b);
+      if (why && /Chapter/.test(why)) planIdx++; // chapter-gated: the simulator never gets there
+      else if (p.when(s) && !why) {
         colony.build(p.b);
         planIdx++;
       }
@@ -59,6 +61,20 @@ export function playDefaultPlan(colony: Colony, sols: number, onSol: ((c: Colony
     const rate = (type: string, out: string) => s.buildings.filter((b) => b.type === type && b.enabled).length * (D.buildings[type].out?.[out] ?? 0) * H;
     if (hod === 0 && !s.waking && s.cryo > 0 && s.awake + 8 <= colony.beds() && rate("hydroponics", "food") > (s.awake + 8) * D.colonists.foodPerSol && rate("waterExtractor", "water") > (s.awake + 8) * D.colonists.waterPerSol + 24 && s.stocks.medicine >= 16) {
       colony.wake(8);
+    }
+    // The simulator has no Hermes: assume one real mission every two sols (5 steps, decent
+    // quality, approved), which only counts once a powered Research Lab stands, and buy
+    // research tiers as the data allows.
+    if (hod === 12 && colony.sol % 2 === 0) colony.missionDone(5, 0.8, true, "an assumed mission");
+    for (const [id, t] of Object.entries(D.research.tiers)) {
+      const done = id === "alienTech" ? s.research.alienTech : s.research.tiers.includes(id);
+      if (!done && s.stocks.data >= t.cost) {
+        try {
+          colony.research(id);
+        } catch {
+          /* needs the previous tier */
+        }
+      }
     }
     // Expedition salvage, spread over the sol.
     colony.deliver("salvage", (exp.tripsPerSol * (exp.salvage.min + exp.salvage.max)) / 2 / H, "expedition");

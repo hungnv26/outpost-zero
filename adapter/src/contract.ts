@@ -157,4 +157,6 @@ export type ClientCommand =
   | { type: "colony.cancel_build" }
   | { type: "colony.toggle"; id: string; enabled: boolean }
   | { type: "colony.wake"; count: number }
-  | { type: "colony.repair"; target: string };
+  | { type: "colony.repair"; target: string }
+  | { type: "colony.research"; tier: string }
+  | { type: "autonomy.set"; target: string; level: number };

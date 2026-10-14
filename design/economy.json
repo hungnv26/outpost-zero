@@ -280,7 +280,10 @@
         "parts": 12
       },
       "buildHours": 16,
-      "maintenancePartsPerSol": 0.2
+      "maintenancePartsPerSol": 0.2,
+      "requires": [
+        "tier1"
+      ]
     },
     "medBay": {
       "dept": "Knowledge",
@@ -320,7 +323,10 @@
         "parts": 20
       },
       "buildHours": 12,
-      "unlocks": "deep-space signals (Chapter II)"
+      "unlocks": "deep-space signals (Chapter II)",
+      "requires": [
+        "tier2"
+      ]
     },
     "storageDepot": {
       "dept": "Commons",
@@ -354,7 +360,10 @@
       },
       "buildHours": 12,
       "influencePerSol": 1.0,
-      "requires": "Chapter II"
+      "requires": [
+        "tier3",
+        "chapterII"
+      ]
     },
     "repairBay": {
       "dept": "Commons",
@@ -386,7 +395,9 @@
         "parts": 120
       },
       "buildHours": 72,
-      "requires": "Chapter IV",
+      "requires": [
+        "chapterIV"
+      ],
       "ending": "Exodus"
     },
     "networkLink": {
@@ -401,7 +412,9 @@
         "artifacts": 12
       },
       "buildHours": 48,
-      "requires": "Chapter IV",
+      "requires": [
+        "chapterIV"
+      ],
       "ending": "Singularity"
     }
   },
@@ -415,7 +428,9 @@
     },
     "blueprintChance": 0.15,
     "artifactChanceAfterChapterII": 0.08,
-    "lossChance": 0.03
+    "lossChance": 0.03,
+    "blueprintData": 25,
+    "lossParts": 2
   },
   "missions": {
     "$comment": "Real Hermes missions. Data is earned per completed step, multiplied by the Reviewer's quality score (0..1) and the human approval.",
@@ -427,7 +442,19 @@
       "tier2": 300,
       "tier3": 800,
       "alienTech": 1500
-    }
+    },
+    "reviewerQuality": {
+      "approve": 1.0,
+      "needsWork": 0.6,
+      "unknown": 0.8
+    },
+    "autoMissionTitles": [
+      "Research practical ways to raise hydroponic crop yield in a closed habitat; keep it short.",
+      "Research how small colonies ration water and recycle grey water; keep it short.",
+      "Research field repairs for small nuclear reactors and solar arrays; keep it short.",
+      "Research how to extend battery life in cold, dusty environments; keep it short.",
+      "Research what is known about long-duration cryosleep recovery; keep it short."
+    ]
   },
   "start": {
     "colonistsAwake": 24,
@@ -542,5 +569,40 @@
     "efficiency": 0.8,
     "computeBudgetFactor": 0.5,
     "trustOnce": 5
+  },
+  "compute": {
+    "$comment": "MOTHER's compute: real LLM tokens per sol. Local models cost nothing but still count.",
+    "budgetKTokPerSol": 150
+  },
+  "research": {
+    "$comment": "Data (from real missions) buys tiers; each unlocks buildings. Alien Tech is the Chapter IV gate.",
+    "tiers": {
+      "tier1": {
+        "cost": 100,
+        "name": "Basic Fabrication",
+        "unlocks": [
+          "fabricator"
+        ]
+      },
+      "tier2": {
+        "cost": 300,
+        "name": "Deep Space Comms",
+        "unlocks": [
+          "relayDish"
+        ]
+      },
+      "tier3": {
+        "cost": 800,
+        "name": "Ruin Survey",
+        "unlocks": [
+          "excavationSite"
+        ]
+      },
+      "alienTech": {
+        "cost": 1500,
+        "name": "Alien Technology",
+        "unlocks": []
+      }
+    }
   }
 }

@@ -45,9 +45,20 @@ WRITER_PROMPT = (
 )
 
 
+GOVERNOR_PROMPT = (
+    "You are the Governor of Outpost Zero, a colony on a hostile planet, playing a match. "
+    "Each game hour you receive the colony's observation as JSON. Keep the colonists alive "
+    "and reach the objective: act with the colony_* tools (one call per action, a few per "
+    "hour at most), then reply with one short line saying what you did and why. Water and "
+    "food first, then power and materials; wake colonists only when production carries them; "
+    "a Research Lab and colony_study earn data for research. Never invent tool results."
+)
+
+
 def get_migration_agents():
     # (id, name, system_prompt, agent_type, parent_id, skills, x, y)
     return [
+        ("governor", "Governor", GOVERNOR_PROMPT, "agent", "jarvis", "colony", 450, 760),
         ("scout", "Scout", SCOUT_PROMPT, "agent", "jarvis", "web_search", 450, 820),
         ("insights", "Data Analyst", INSIGHTS_PROMPT, "agent", "jarvis", REASONING_ONLY, 450, 940),
         ("writer", "Writer", WRITER_PROMPT, "agent", "jarvis", REASONING_ONLY, 450, 1000),
@@ -87,3 +98,101 @@ def execute_named_tool(name, arguments):
         return json.dumps({"error": "Command failed in the sandbox.", "stderr": data.get("stderr", "")}, ensure_ascii=False)
     except Exception as e:  # never fall back to running it in the backend
         return json.dumps({"error": f"Sandbox unavailable, command not run: {e}"}, ensure_ascii=False)
+
+
+# ---- Outpost Zero Arena: the colony tools (docs/arena.md §6) ----
+# Each tool is one action sent to the adapter's Arena API; the referee validates it and the
+# same code the game's buttons run applies it. Nothing happens inside Hermes.
+import os as _os
+
+ARENA_URL = _os.environ.get("ARENA_URL", "http://host.docker.internal:8772").rstrip("/")
+ARENA_TOKEN = _os.environ.get("ARENA_TOKEN", "")
+ARENA_TEAM = _os.environ.get("ARENA_TEAM", "A")
+
+
+def _tool(name, description, props=None, required=None):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": props or {}, "required": required or []},
+        },
+    }
+
+
+COLONY_TOOL_SCHEMAS = [
+    _tool("colony_state", "The colony's current observation: stocks, power, colonists, buildings, catalog, research, budget."),
+    _tool("colony_build", "Build a building from the catalog (paid up front; two idle machines build it). Types: waterExtractor, solarArray, batteryBank, scrapYard, hydroponics, medBay, researchLab, storageDepot, habitat, fabricator, relayDish.",
+          {"type": {"type": "string", "description": "catalog type, e.g. waterExtractor"}}, ["type"]),
+    _tool("colony_cancel_build", "Cancel the building under construction (half the cost is refunded)."),
+    _tool("colony_toggle", "Switch a building off or on (saves power or inputs).",
+          {"id": {"type": "string", "description": "building id from the observation"}, "enabled": {"type": "boolean"}}, ["id", "enabled"]),
+    _tool("colony_wake", "Wake colonists from cryo (2 medicine each, needs free beds and food and water to carry them).",
+          {"count": {"type": "integer", "description": "1 to 8"}}, ["count"]),
+    _tool("colony_autonomy", "Set a department's machine autonomy 0-4 (higher: more efficient, more influence for MOTHER).",
+          {"target": {"type": "string", "description": "command, research, engineering or knowledge"}, "level": {"type": "integer"}}, ["target", "level"]),
+    _tool("colony_research", "Spend data on a research tier: tier1 (Fabricator), tier2 (Relay Dish), tier3 (Excavation), alienTech.",
+          {"tier": {"type": "string"}}, ["tier"]),
+    _tool("colony_repair", "Repair the reactor (4 parts) when its output has dropped.", {"target": {"type": "string", "description": "reactor"}}),
+    _tool("colony_study", "Start a real research mission in the Research Lab on a topic; it earns data when it completes. One mission at a time.",
+          {"topic": {"type": "string"}}, ["topic"]),
+    _tool("colony_note", "A one-line note for the spectators (max 120 characters).", {"text": {"type": "string"}}, ["text"]),
+]
+COLONY_TOOL_NAMES = [t["function"]["name"] for t in COLONY_TOOL_SCHEMAS]
+
+
+def extra_tool_schemas():
+    return list(COLONY_TOOL_SCHEMAS)
+
+
+def extra_skills():
+    return {"colony": ["colony_* tools: play the Outpost Zero colony (Arena)"]}
+
+
+def tools_for_skill(skill):
+    if skill == "colony":
+        return list(COLONY_TOOL_NAMES)
+    return None
+
+
+def all_plugin_tool_names():
+    return list(COLONY_TOOL_NAMES)
+
+
+def is_plugin_tool_name(name):
+    return True if name in COLONY_TOOL_NAMES else None
+
+
+def _colony_action(name, arguments):
+    import json
+
+    import requests
+
+    if not ARENA_TOKEN:
+        return json.dumps({"ok": False, "reason": "ARENA_TOKEN is not set in the Hermes environment"})
+    try:
+        resp = requests.post(
+            f"{ARENA_URL}/arena/{ARENA_TEAM}/action",
+            json={"tool": name, "args": arguments or {}},
+            headers={"x-arena-token": ARENA_TOKEN},
+            timeout=20,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"ok": False, "reason": f"arena answered {resp.status_code}"}
+        if name == "colony_state" and isinstance(data, dict) and "observation" in data:
+            return json.dumps(data["observation"], ensure_ascii=False)[:6000]
+        return json.dumps(data, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"ok": False, "reason": f"arena unreachable: {e}"})
+
+
+_execute_shell = execute_named_tool
+
+
+def execute_named_tool(name, arguments):  # noqa: F811 - wraps the sandbox hook above
+    if name in COLONY_TOOL_NAMES:
+        return _colony_action(name, arguments)
+    return _execute_shell(name, arguments)

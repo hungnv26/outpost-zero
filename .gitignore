@@ -10,3 +10,5 @@ game/.godot/
 game/build/
 captures/
 .data/
+infra/teams/*/hermes.env
+infra/providers.env

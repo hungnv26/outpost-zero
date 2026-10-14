@@ -22,6 +22,7 @@ done
 # infra/hermes.env holds your Hermes settings (and any API key); it is created from the
 # tracked example and stays out of git.
 [[ -f infra/hermes.env ]] || cp infra/hermes.env.example infra/hermes.env
+grep -q '^ARENA_TOKEN=' .env || { echo "ARENA_TOKEN=$(openssl rand -hex 16)" >> .env; echo "  added ARENA_TOKEN to .env"; }
 set -a; source .env; set +a
 HERMES_URL=${HERMES_URL:-http://127.0.0.1:8101}
 MC_URL=${MC_URL:-http://127.0.0.1:3001}

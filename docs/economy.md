@@ -239,6 +239,9 @@ colony: {
   buildings: [{ id, type, label, dept, enabled, powered, producing, crew, crewNeeded, drawKw, in, out, permanent, note }],
   building:  { id, type, label, hoursLeft, hours, builders } | null,       // the site under construction
   catalog:   [{ type, label, dept, cost, buildHours, drawKw, genKw, crew, in, out, affordable, blocked, note }],
+  autonomy: { command | research | engineering | knowledge: { level, name, efficiency, computeShare, approvals } },
+  research: { tiers: string[], alienTech, options: [{ id, name, cost, unlocks, done, affordable }] },
+  compute:  { solKTok, budgetKTok, exhausted, missions, autoMissions },
   trust, influence, reactor, chapter
 }
 ```
@@ -246,15 +249,26 @@ colony: {
 Commands (WebSocket or `POST /command`): `colony.set_speed {speed}`, `colony.build {building, x?, z?}`
 (a site on the map: the next free slot of its department, or the given spot),
 `colony.cancel_build`, `colony.toggle {id, enabled}`, `colony.wake {count}`,
-`colony.repair {target: "reactor"}`. A refused command answers with the reason
+`colony.repair {target: "reactor"}`, `colony.research {tier}` (tier1, tier2, tier3, alienTech) and
+`autonomy.set {target, level}` per department. A refused command answers with the reason
 (`{"error": "Excavation Site needs Chapter II"}`). State persists in `.data/colony.json` after
 every tick and command; **Reset base** in Build mode starts a new colony at the crash site.
 Map buildings carry `kind`, `status` and `progress` (`.data/base.json`); the economy and the
 map are kept in step by the adapter, and a building removed in Build mode leaves the economy. `COLONY=0` disables the economy,
 `COLONY_SECONDS_PER_HOUR` overrides the clock for tests.
 
-Still to come: `autonomy.set`, `economy.event`, `colony.chapter`, and the compute figures
-(Phase 3 and 6).
+**Real work (Phase 3).** The adapter listens to its own world events: a step whose agent used a
+web tool (`search`, `browse`, `fetch`, `news`, `rss`) is an expedition and pays salvage when
+the step completes (the Scout's trips pay half and never fail; a survey has the loss chance);
+a completed mission pays data by step times the Reviewer's verdict (APPROVE 1.0, NEEDS WORK
+0.6, otherwise 0.8) plus the approved report, only while a powered Research Lab stands; every
+token Hermes reports is compute against `compute.budgetKTokPerSol`. At Command autonomy 2
+MOTHER approves reports itself; at 3 it starts a research mission by itself at hour 6 of a sol
+while its compute share allows and a Research Lab exists. Research tiers gate the Fabricator
+(tier 1), the Relay Dish (tier 2) and the Excavation Site (tier 3). Rolls (expedition losses,
+blueprints, artifacts) come from the colony's seed, so a replay or a match is reproducible.
+
+Still to come: `economy.event` and `colony.chapter` (Phase 6).
 
 ## 14. Implementation plan
 

@@ -5,6 +5,7 @@ import { type Base, isLayoutCommand } from "./base.ts";
 import type { ClientCommand, ServerMessage } from "./contract.ts";
 import { LayoutError } from "./layout.ts";
 import { ColonyError, type ColonyRunner } from "./economy.ts";
+import type { Arena } from "./arena.ts";
 import type { Source } from "./source.ts";
 import type { World } from "./world.ts";
 
@@ -65,13 +66,17 @@ export function parseCommand(raw: string): ClientCommand | null {
       return typeof c.count === "number" ? { type: "colony.wake", count: c.count } : null;
     case "colony.repair":
       return typeof c.target === "string" ? { type: "colony.repair", target: c.target } : null;
+    case "colony.research":
+      return typeof c.tier === "string" ? { type: "colony.research", tier: c.tier } : null;
+    case "autonomy.set":
+      return typeof c.target === "string" && typeof c.level === "number" ? { type: "autonomy.set", target: c.target, level: c.level } : null;
     default:
       return null;
   }
 }
 
 // HTTP (health, state, commands for scripts) + WebSocket (/world) for game clients.
-export function startServer(world: World, source: Source, port: number, host = "127.0.0.1", base: Base | null = null, colony: ColonyRunner | null = null): Promise<Server> {
+export function startServer(world: World, source: Source, port: number, host = "127.0.0.1", base: Base | null = null, colony: ColonyRunner | null = null, arena: Arena | null = null): Promise<Server> {
   const clients = new Set<WebSocket>();
 
   const handle = async (cmd: ClientCommand): Promise<void> => {
@@ -79,7 +84,7 @@ export function startServer(world: World, source: Source, port: number, host = "
       if (!base) throw new LayoutError("Build mode is not available.");
       return base.apply(cmd);
     }
-    if (cmd.type.startsWith("colony.")) {
+    if (cmd.type.startsWith("colony.") || cmd.type.startsWith("autonomy.")) {
       if (!colony) throw new ColonyError("The colony economy is not running.");
       return colony.command((c, r) => {
         switch (cmd.type) {
@@ -95,6 +100,10 @@ export function startServer(world: World, source: Source, port: number, host = "
             return c.wake(cmd.count);
           case "colony.repair":
             return c.repair(cmd.target as "reactor");
+          case "colony.research":
+            return c.research(cmd.tier);
+          case "autonomy.set":
+            return c.setAutonomy(cmd.target, cmd.level);
         }
       });
     }
@@ -139,6 +148,17 @@ export function startServer(world: World, source: Source, port: number, host = "
     const path = (req.url ?? "").split("?")[0];
     if (req.method === "GET" && path === "/health") return json(200, { ok: true, source: source.name, clients: clients.size });
     if (req.method === "GET" && path === "/state") return json(200, { seq: world.currentSeq, world: world.snapshot() });
+    if (req.method === "GET" && path === "/arena") return json(200, { match: arena?.match ?? null, observation: arena?.match ? arena.observation() : null });
+    if (req.method === "POST" && (path === "/arena/start" || path === "/arena/stop")) {
+      if (!arena) return json(404, { error: "no arena" });
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      try {
+        return json(200, path === "/arena/start" ? { match: arena.start(JSON.parse(body || "{}")) } : { result: arena.stop("stopped by request") });
+      } catch (e) {
+        return json(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     if (req.method === "GET" && path === "/replay") {
       const missionId = new URL(req.url ?? "", "http://x").searchParams.get("missionId") ?? undefined;
       const replay = world.replay(missionId);

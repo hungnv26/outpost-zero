@@ -113,7 +113,7 @@ var _colony_sig = ""
 
 func set_colony(c: Dictionary):
 	_colony = c
-	var sig = JSON.stringify([c.get("catalog", []).map(func(k): return [k["type"], k.get("affordable", false), k.get("blocked")]), c.get("building")])
+	var sig = JSON.stringify([c.get("catalog", []).map(func(k): return [k["type"], k.get("affordable", false), k.get("blocked")]), c.get("building"), c.get("research", {}).get("options", []).map(func(o): return [o.get("id"), o.get("done"), o.get("affordable")]), int(float(c.get("stocks", {}).get("data", 0)))])
 	if sig == _colony_sig:
 		return
 	_colony_sig = sig
@@ -194,9 +194,34 @@ func _render_buildings():
 const DEPT_OF = {"Command": "command", "Research": "research", "Engineering": "code", "Knowledge": "knowledge", "Commons": "meeting"}
 
 
+# Research tiers bought with data (earned by real missions in a powered Research Lab).
+func _render_research():
+	var r = _colony.get("research", {})
+	var options = r.get("options", [])
+	if options.is_empty():
+		return
+	_body.add_child(_field_label("RESEARCH  ·  %d data" % int(float(_colony.get("stocks", {}).get("data", 0)))))
+	var prev_done = true
+	for o in options:
+		var unlocks = o.get("unlocks", [])
+		var sub = "%d data" % int(o.get("cost", 0))
+		if not unlocks.is_empty():
+			sub += " · unlocks " + ", ".join(unlocks.map(func(k): return k.capitalize()))
+		var row = _row(hud.ACCENT if o.get("done", false) else Color(0.5, 0.55, 0.65), o.get("name", ""), ("Researched" if o.get("done", false) else sub))
+		if not o.get("done", false):
+			var b = _small("Research")
+			b.disabled = not (o.get("affordable", false) and prev_done)
+			b.tooltip_text = "Needs the previous tier first" if not prev_done else ("Spend %d data" % int(o.get("cost", 0)))
+			var id = o["id"]
+			b.pressed.connect(func(): command.emit({"type": "colony.research", "tier": id}))
+			row.add_child(b)
+		prev_done = o.get("done", false) or o.get("id", "") == "alienTech"
+
+
 # Everything that can be built, with its cost and what it does. Two idle machines build it
 # in its department's district, or where you click.
 func _render_catalog():
+	_render_research()
 	_body.add_child(_field_label("CATALOG"))
 	var site = _colony.get("building")
 	if site != null and not site.is_empty():

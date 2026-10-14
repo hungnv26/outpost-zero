@@ -10,6 +10,9 @@ import { loadLayout, saveLayout } from "./layout.ts";
 import { MissionControlSink } from "./sinks/mission-control.ts";
 import { World } from "./world.ts";
 import { Colony, ColonyRunner, loadColonyState, loadDefs } from "./economy.ts";
+import { Arena } from "./arena.ts";
+import { startArenaServer } from "./arena-server.ts";
+import { HermesGovernor, roundPrompt } from "./sources/hermes-governor.ts";
 
 // Settings come from the environment, falling back to the repo's .env (scripts/gen-env.sh).
 const dotenv = new URL("../../.env", import.meta.url);
@@ -85,6 +88,7 @@ if (env.COLONY !== "0") {
     saveLayout(layoutPath, l);
     await source.layoutChanged?.(l);
   };
+  colony.source = source;
   colony.start();
   if (!saved) world.logLine("Sol 0: Odyssey-7 is down. 24 colonists awake, 198 in cryo. Keep them alive.", "warn");
 }
@@ -101,8 +105,44 @@ if (colony) {
     else runner.syncWithLayout();
   };
 }
-await startServer(world, source, port, "127.0.0.1", base, colony);
-console.log(`[adapter] source=${sourceName} ws://127.0.0.1:${port}/world mission-control=${sink ? env.MC_URL : "off"}`);
+// The Arena (docs/arena.md): the referee, its API for the Hermes plugin's colony tools, and
+// the Governor loop that lets the team's model play each game hour.
+let arena: Arena | null = null;
+if (colony && env.ARENA !== "0") {
+  arena = new Arena(colony, world);
+  const arenaToken = env.ARENA_TOKEN ?? "";
+  const arenaPort = Number(env.ARENA_PORT ?? 8772);
+  if (arenaToken) await startArenaServer(arena, arenaPort, arenaToken, env.ARENA_BIND ?? "0.0.0.0");
+  else console.log("[adapter] arena API off: no ARENA_TOKEN in .env (scripts/gen-env.sh adds one)");
+  if (sourceName === "hermes" && env.ARENA_GOVERNOR !== "0") {
+    const gov = new HermesGovernor({ baseUrl: env.HERMES_URL ?? "http://127.0.0.1:8101", token: env.HERMES_TOKEN ?? "dev_master_token" });
+    let busy = false;
+    let first = true;
+    arena.on("match", () => {
+      gov.newChat();
+      first = true;
+    });
+    arena.on("hour", () => {
+      const a = arena!;
+      if (busy || a.match?.status !== "running" || a.match.frozen) return;
+      busy = true;
+      a.roundStarted();
+      const prompt = roundPrompt(a.observation(), first);
+      first = false;
+      gov
+        .ask(prompt)
+        .then((r) => a.roundEnded(r))
+        .catch((e) => world.logLine(`Governor round failed: ${e}`, "warn"))
+        .finally(() => {
+          busy = false;
+        });
+    });
+  }
+  sink?.attachArena(arena);
+}
+
+await startServer(world, source, port, "127.0.0.1", base, colony, arena);
+console.log(`[adapter] source=${sourceName} ws://127.0.0.1:${port}/world mission-control=${sink ? env.MC_URL : "off"} arena=${arena && env.ARENA_TOKEN ? `0.0.0.0:${env.ARENA_PORT ?? 8772}` : "off"}`);
 
 if (env.ADAPTER_VERBOSE === "1") world.on("message", (m) => console.log(JSON.stringify(m)));
 

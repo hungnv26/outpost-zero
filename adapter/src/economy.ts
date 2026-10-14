@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { type BaseLayout, cloneLayout, KIND_DEPT, KIND_LABEL, KIND_MODEL, START_IDS, upsertBuilding } from "./layout.ts";
+import type { ServerMessage } from "./contract.ts";
 import type { World } from "./world.ts";
 
 // ---- definitions (design/economy.json) ----
@@ -33,7 +34,7 @@ export interface BuildingDefn {
   repairParts?: number;
   wakeCost?: Record<string, number>;
   wakeHours?: number;
-  requires?: string;
+  requires?: string[]; // tokens: tier1, tier2, tier3, chapterII, chapterIV
   ending?: string;
 }
 
@@ -50,7 +51,16 @@ export interface EconomyDefs {
   trust: { perSol: Record<string, number>; thresholds: { strike: number; mutiny: number } };
   influence: { perSol: Record<string, number | string>; thresholds: Record<string, number> };
   chapters: Record<string, unknown>;
+  compute: { budgetKTokPerSol: number };
+  research: { tiers: Record<string, { cost: number; name: string; unlocks: string[] }> };
+  expeditions: { hours: number; tripsPerSol: number; salvage: { min: number; max: number }; blueprintChance: number; artifactChanceAfterChapterII: number; lossChance: number; blueprintData: number; lossParts: number };
+  missions: { dataPerStep: number; dataPerApprovedReport: number; computeKTokPerStepTypical: number; reviewerQuality: { approve: number; needsWork: number; unknown: number }; autoMissionTitles: string[] };
 }
+
+export const DEPTS = ["command", "research", "engineering", "knowledge"] as const;
+export type Dept = (typeof DEPTS)[number];
+// Map departments (layout capabilities) to the economy's autonomy departments.
+export const DEPT_OF_CAPABILITY: Record<string, Dept> = { command: "command", approval: "command", research: "research", code: "engineering", knowledge: "knowledge", meeting: "command" };
 
 export const STOCKS = ["charge", "water", "food", "salvage", "materials", "parts", "medicine", "data", "artifacts"] as const;
 export type Stock = (typeof STOCKS)[number];
@@ -79,7 +89,10 @@ export interface ColonyState {
   cryo: number;
   dead: number;
   machines: number;
-  autonomy: number;
+  autonomy: Record<Dept, number>;
+  research: { tiers: string[]; alienTech: boolean };
+  compute: { solKTok: number; totalKTok: number; missions: number; autoMissions: number };
+  rngCounter: number;
   stocks: Record<Stock, number>;
   trust: number;
   influence: number;
@@ -108,7 +121,11 @@ export interface ColonyView {
   caps: Partial<Record<Stock, number>>;
   flows: Record<Stock, number>; // net per sol, from the last 24 hours
   colonists: { awake: number; cryo: number; dead: number; beds: number; hungry: boolean; thirsty: boolean; waking: number; striking: boolean };
-  machines: { count: number; autonomy: number; autonomyName: string; powered: boolean; building: number };
+  machines: { count: number; efficiency: number; powered: boolean; building: number };
+  autonomy: Record<Dept, { level: number; name: string; efficiency: number; computeShare: number; approvals: string }>;
+  autonomyLevels: { level: number; name: string; efficiency: number; computeShare: number; approvals: string; influenceDriftPerSol: number }[];
+  research: { tiers: string[]; alienTech: boolean; options: { id: string; name: string; cost: number; unlocks: string[]; done: boolean; affordable: boolean }[] };
+  compute: { solKTok: number; budgetKTok: number; exhausted: boolean; missions: number; autoMissions: number };
   buildings: {
     id: string; type: string; label: string; dept: string; enabled: boolean; powered: boolean; producing: boolean;
     crew: number; crewNeeded: number; drawKw: number; in: Record<string, number>; out: Record<string, number>; permanent: boolean; note: string;
@@ -178,7 +195,10 @@ export class Colony {
       cryo: s.colonistsCryo,
       dead: s.colonistsDead,
       machines: s.machines,
-      autonomy: s.machineAutonomy,
+      autonomy: { command: s.machineAutonomy, research: s.machineAutonomy, engineering: s.machineAutonomy, knowledge: s.machineAutonomy },
+      research: { tiers: [], alienTech: false },
+      compute: { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 },
+      rngCounter: 0,
       stocks,
       trust: s.trust,
       influence: s.influence,
@@ -228,8 +248,28 @@ export class Colony {
     return this.state.buildings.reduce((n, b) => n + (this.defs.buildings[b.type].capacity ?? 0), 0);
   }
 
-  efficiency(): number {
-    return this.defs.machines.autonomyLevels[this.state.autonomy]?.efficiency ?? 1;
+  // Machine efficiency: by department, or the mean of the four when no department is given.
+  efficiency(dept?: Dept): number {
+    const lv = this.defs.machines.autonomyLevels;
+    if (dept) return lv[this.state.autonomy[dept]]?.efficiency ?? 1;
+    return DEPTS.reduce((a, d) => a + (lv[this.state.autonomy[d]]?.efficiency ?? 1), 0) / DEPTS.length;
+  }
+
+  private maxAutonomy(): number {
+    return Math.max(...DEPTS.map((d) => this.state.autonomy[d]));
+  }
+
+  // A deterministic roll in [0, 1) from the seed and a counter, so replays and matches agree.
+  roll(): number {
+    const s = this.state;
+    let x = (s.seed ^ (s.rngCounter++ * 0x9e3779b1)) >>> 0;
+    x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
+    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  }
+
+  hasPowered(type: string): boolean {
+    return this.state.buildings.some((b) => b.type === type && b.enabled && this.state.last.served.includes(b.id));
   }
 
   private add(r: Stock, v: number): number {
@@ -273,7 +313,7 @@ export class Colony {
     return got;
   }
 
-  private note(text: string, level: "info" | "warn" | "error" = "info") {
+  note(text: string, level: "info" | "warn" | "error" = "info") {
     this.events.push({ text: `Sol ${this.sol}: ${text}`, level });
   }
 
@@ -289,7 +329,11 @@ export class Colony {
     const d = this.defs.buildings[type];
     if (!d) return `unknown building type "${type}"`;
     if (d.permanent) return `${labelOf(type)} cannot be built`;
-    if (d.requires) return `${labelOf(type)} needs ${d.requires}`;
+    for (const req of d.requires ?? []) {
+      if (req.startsWith("tier") && !this.state.research.tiers.includes(req)) return `${labelOf(type)} needs ${this.defs.research.tiers[req]?.name ?? req} research`;
+      if (req === "chapterII" && this.state.chapter === "I") return `${labelOf(type)} needs Chapter II`;
+      if (req === "chapterIV" && this.state.chapter !== "IV") return `${labelOf(type)} needs Chapter IV`;
+    }
     if (this.state.building) return `already building ${labelOf(this.state.building.type)}`;
     for (const [r, v] of Object.entries(d.cost ?? {})) {
       if ((this.state.stocks[r as Stock] ?? 0) < v) return `${labelOf(type)} needs ${v} ${r}, have ${r1(this.state.stocks[r as Stock] ?? 0)}`;
@@ -341,6 +385,84 @@ export class Colony {
     this.note(`waking ${count} colonists from cryo`);
   }
 
+  setAutonomy(dept: string, level: number): void {
+    if (!DEPTS.includes(dept as Dept)) throw new ColonyError(`unknown department "${dept}"`);
+    if (!Number.isInteger(level) || level < 0 || level >= this.defs.machines.autonomyLevels.length) throw new ColonyError("autonomy is 0 to 4");
+    if (level === 4 && this.state.chapter !== "III" && this.state.chapter !== "IV") throw new ColonyError("Emancipated machines need Chapter III");
+    this.state.autonomy[dept as Dept] = level;
+    const name = this.defs.machines.autonomyLevels[level].name;
+    this.note(`${dept} machines set to ${name} (${level})`, level >= 3 ? "warn" : "info");
+  }
+
+  research(id: string): void {
+    const t = this.defs.research.tiers[id];
+    if (!t) throw new ColonyError(`unknown research "${id}"`);
+    const s = this.state;
+    if (id === "alienTech" ? s.research.alienTech : s.research.tiers.includes(id)) throw new ColonyError(`${t.name} is already researched`);
+    const order = Object.keys(this.defs.research.tiers);
+    const prev = order[order.indexOf(id) - 1];
+    if (prev && prev !== "alienTech" && !s.research.tiers.includes(prev)) throw new ColonyError(`${t.name} needs ${this.defs.research.tiers[prev].name} first`);
+    if (s.stocks.data < t.cost) throw new ColonyError(`${t.name} needs ${t.cost} data, have ${r1(s.stocks.data)}`);
+    this.add("data", -t.cost);
+    if (id === "alienTech") s.research.alienTech = true;
+    else s.research.tiers.push(id);
+    this.note(`${t.name} researched${t.unlocks.length ? `: ${t.unlocks.map(labelOf).join(", ")} unlocked` : ""}`);
+  }
+
+  // Real tokens spent by Hermes, fed in by the runner.
+  useCompute(tokens: number): void {
+    if (!(tokens > 0)) return;
+    const k = tokens / 1000;
+    this.state.compute.solKTok += k;
+    this.state.compute.totalKTok += k;
+  }
+
+  computeExhausted(): boolean {
+    return this.state.compute.solKTok >= this.defs.compute.budgetKTokPerSol;
+  }
+
+  // MOTHER may spend this much of the sol's compute without being asked (the highest
+  // department share applies).
+  computeShareAllowed(): number {
+    const lv = this.defs.machines.autonomyLevels;
+    return Math.max(...DEPTS.map((d) => lv[this.state.autonomy[d]]?.computeShare ?? 0));
+  }
+
+  // A real research trip came back: salvage, maybe a blueprint (data), maybe a loss.
+  expedition(kind: "survey" | "scout", agentName = "An expedition"): { salvage: number; blueprint: boolean; artifact: boolean; lost: boolean } {
+    const e = this.defs.expeditions;
+    const s = this.state;
+    const r = this.roll();
+    const lost = kind === "survey" && r < e.lossChance;
+    let salvage = Math.round(e.salvage.min + this.roll() * (e.salvage.max - e.salvage.min));
+    if (kind === "scout") salvage = Math.round(salvage / 2);
+    const blueprint = kind === "survey" && this.roll() < e.blueprintChance;
+    const artifact = (s.chapter !== "I") && this.roll() < e.artifactChanceAfterChapterII;
+    if (lost) {
+      this.add("parts", -e.lossParts);
+      this.note(`${agentName} ran into trouble outside: the salvage was lost and the repair cost ${e.lossParts} parts`, "warn");
+      return { salvage: 0, blueprint: false, artifact: false, lost: true };
+    }
+    this.deliver("salvage", salvage, `${agentName} returned`);
+    if (blueprint) this.deliver("data", e.blueprintData, `${agentName} found a blueprint in the wreckage`);
+    if (artifact) this.deliver("artifacts", 1, `${agentName} brought back something that is in no database`);
+    return { salvage, blueprint, artifact, lost };
+  }
+
+  // A real mission finished: data by step, scaled by the Reviewer's verdict, plus the
+  // approved report. Only a powered Research Lab turns missions into data.
+  missionDone(steps: number, quality: number, approved: boolean, title = "The mission"): number {
+    const m = this.defs.missions;
+    this.state.compute.missions++;
+    if (!this.hasPowered("researchLab")) {
+      this.note(`${title} finished, but without a powered Research Lab nothing was recorded as data`, "warn");
+      return 0;
+    }
+    const data = Math.round(steps * m.dataPerStep * Math.max(0, Math.min(1, quality)) + (approved ? m.dataPerApprovedReport : 0));
+    this.deliver("data", data, `${title} finished (${steps} steps, quality ${Math.round(quality * 100)}%)`);
+    return data;
+  }
+
   repair(target: "reactor"): void {
     if (target !== "reactor") throw new ColonyError("only the reactor can be repaired yet");
     const parts = this.defs.buildings.landingModule.repairParts ?? 4;
@@ -355,13 +477,13 @@ export class Colony {
 
   // One game hour. `builders` is how many machines are at the construction site this hour
   // (the runner counts the real agents; the simulator assumes two).
-  tick(builders?: number): void {
+  tick(builders?: number, efficiency?: number): void {
     const s = this.state;
     const D = this.defs;
     const H = D.time.hoursPerSol;
     const before = { ...s.stocks };
     const daylight = this.daylight;
-    const eff = this.efficiency();
+    const eff = efficiency ?? this.efficiency();
     const striking = s.trust < D.trust.thresholds.strike;
 
     // Labour: humans work their share of the sol (halved on strike); machines are added once we know they have power.
@@ -503,9 +625,11 @@ export class Colony {
     if (!hungry && !thirsty) dt += t.fedAndWatered ?? 0;
     if (hungry) dt += t.hungry ?? 0;
     if (thirsty) dt += t.thirsty ?? 0;
-    if (s.autonomy > 2) dt += t.autonomyAbove2 ?? 0;
+    if (this.maxAutonomy() > 2) dt += t.autonomyAbove2 ?? 0;
     s.trust = Math.max(0, Math.min(100, s.trust + dt));
-    s.influence = Math.min(100, s.influence + (D.machines.autonomyLevels[s.autonomy]?.influenceDriftPerSol ?? 0));
+    const drift = DEPTS.reduce((a, d) => a + (D.machines.autonomyLevels[s.autonomy[d]]?.influenceDriftPerSol ?? 0), 0) / DEPTS.length;
+    s.influence = Math.min(100, s.influence + drift);
+    s.compute.solKTok = 0;
     s.reactor = Math.max(0, s.reactor - (D.buildings.landingModule.degradePerSol ?? 0));
     if (hungry) this.note(`food was short today (${s.shortSols.food} ${s.shortSols.food === 1 ? "sol" : "sols"} running)`, "warn");
     if (thirsty) this.note(`water was short today (${s.shortSols.water} ${s.shortSols.water === 1 ? "sol" : "sols"} running)`, "warn");
@@ -543,7 +667,17 @@ export class Colony {
         hungry: s.shortHours.food > 0 || s.shortSols.food > 0, thirsty: s.shortHours.water > 0 || s.shortSols.water > 0,
         waking: s.waking?.count ?? 0, striking: s.trust < this.defs.trust.thresholds.strike,
       },
-      machines: { count: s.machines, autonomy: s.autonomy, autonomyName: this.defs.machines.autonomyLevels[s.autonomy]?.name ?? "", powered: served.has("machines"), building: s.building ? Math.min(2, s.machines) : 0 },
+      machines: { count: s.machines, efficiency: r1(this.efficiency() * 100) / 100, powered: served.has("machines"), building: s.building ? Math.min(2, s.machines) : 0 },
+      autonomy: Object.fromEntries(DEPTS.map((d) => {
+        const lv = this.defs.machines.autonomyLevels[s.autonomy[d]];
+        return [d, { level: s.autonomy[d], name: lv?.name ?? "", efficiency: lv?.efficiency ?? 1, computeShare: lv?.computeShare ?? 0, approvals: (lv as { approvals?: string })?.approvals ?? "" }];
+      })) as ColonyView["autonomy"],
+      autonomyLevels: this.defs.machines.autonomyLevels.map((l) => ({ ...l, approvals: (l as { approvals?: string }).approvals ?? "" })),
+      research: {
+        tiers: s.research.tiers, alienTech: s.research.alienTech,
+        options: Object.entries(this.defs.research.tiers).map(([id, t]) => ({ id, name: t.name, cost: t.cost, unlocks: t.unlocks, done: id === "alienTech" ? s.research.alienTech : s.research.tiers.includes(id), affordable: s.stocks.data >= t.cost })),
+      },
+      compute: { solKTok: r1(s.compute.solKTok), budgetKTok: this.defs.compute.budgetKTokPerSol, exhausted: this.computeExhausted(), missions: s.compute.missions, autoMissions: s.compute.autoMissions },
       buildings: s.buildings.map((b) => {
         const d = this.defs.buildings[b.type];
         const draws = Boolean(d.class && d.drawKw);
@@ -584,6 +718,13 @@ export function loadColonyState(path: string): ColonyState | null {
     if (s.building && !s.building.id) s.building = null; // saved before sites had map ids
     s.last.crews ??= {};
     s.last.builders ??= 0;
+    if (typeof (s.autonomy as unknown) === "number") {
+      const n = s.autonomy as unknown as number;
+      s.autonomy = { command: n, research: n, engineering: n, knowledge: n };
+    }
+    s.research ??= { tiers: [], alienTech: false };
+    s.compute ??= { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 };
+    s.rngCounter ??= 0;
     return s;
   } catch {
     return null; // a damaged save starts a new colony
@@ -607,6 +748,11 @@ export class ColonyRunner {
   private secondsPerHour: number;
   // Saves the layout and lets the source know (main.ts wires it to the base file and Hermes).
   onLayout: ((layout: BaseLayout) => Promise<void> | void) | null = null;
+  // The mission source, for MOTHER's own decisions (auto-approval, auto-missions).
+  source: { createMission(title: string): Promise<void>; resolveApproval(id: string, approved: boolean): Promise<void> } | null = null;
+  private expeditions = new Map<string, { kind: "survey" | "scout"; agentId: string }>(); // taskId -> trip
+  private lastTokens = 0;
+  private autoTitle = 0;
 
   constructor(colony: Colony, world: World, path: string | null, secondsPerHour = colony.defs.time.realSecondsPerHour) {
     this.colony = colony;
@@ -617,8 +763,102 @@ export class ColonyRunner {
 
   start(): void {
     this.syncWithLayout();
+    this.lastTokens = this.world.snapshot().resources.tokensUsed;
+    this.world.on("message", (m: ServerMessage) => this.onWorld(m));
     this.publish();
     this.schedule();
+  }
+
+  // Real work reaches the economy here: web research trips bring salvage, finished
+  // missions earn data, tokens are compute, and MOTHER acts on what autonomy allows.
+  private onWorld(m: ServerMessage): void {
+    const c = this.colony;
+    switch (m.type) {
+      case "agent.state": {
+        const a = m.agent;
+        if (a.state === "working" && a.taskId && /search|browse|fetch|news|rss|scrap/i.test(a.detail ?? "") && !this.expeditions.has(a.taskId)) {
+          this.expeditions.set(a.taskId, { kind: a.id === "scout" ? "scout" : "survey", agentId: a.id });
+        }
+        return;
+      }
+      case "task.upsert": {
+        const t = m.task;
+        const trip = this.expeditions.get(t.id);
+        if (!trip || (t.status !== "done" && t.status !== "failed")) return;
+        this.expeditions.delete(t.id);
+        if (t.status === "done") {
+          const name = this.world.layout.agents.find((x) => x.id === trip.agentId)?.name ?? "An expedition";
+          c.expedition(trip.kind, name);
+          this.publish();
+          this.save();
+        }
+        return;
+      }
+      case "mission.upsert": {
+        const mi = m.mission;
+        if (mi.status !== "completed" && mi.status !== "failed") return;
+        if (this.world.snapshot().tasks.some((t) => t.missionId === mi.id && t.id.endsWith(":data"))) return;
+        const tasks = this.world.snapshot().tasks.filter((t) => t.missionId === mi.id);
+        const steps = tasks.filter((t) => t.status === "done" && !t.id.endsWith(":approval")).length;
+        const review = tasks.find((t) => t.agentId === "reviewer" && !t.id.endsWith(":approval"))?.result ?? "";
+        const q = this.colony.defs.missions.reviewerQuality;
+        const text = `${review}\n${mi.result ?? ""}`;
+        const quality = /needs work/i.test(text) ? q.needsWork : /approve|approved|✅/i.test(text) ? q.approve : q.unknown;
+        if (mi.status === "completed") c.missionDone(steps, quality, true, `"${mi.title.slice(0, 60)}"`);
+        else c.note(`"${mi.title.slice(0, 60)}" failed: nothing learned`, "warn");
+        this.expeditions.clear();
+        this.publish();
+        this.save();
+        return;
+      }
+      case "approval.upsert": {
+        const ap = m.approval;
+        if (ap.status !== "pending" || !this.source) return;
+        if (c.state.autonomy.command >= 2) {
+          const src = this.source;
+          this.world.logLine(`MOTHER approves the report itself: Command machines are ${this.colony.defs.machines.autonomyLevels[c.state.autonomy.command].name}.`, "warn");
+          setTimeout(() => void src.resolveApproval(ap.id, true), 1500);
+        }
+        return;
+      }
+      case "resource.update": {
+        const used = m.resources.tokensUsed;
+        if (used > this.lastTokens) c.useCompute(used - this.lastTokens);
+        if (used !== this.lastTokens) this.lastTokens = used;
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  // At Autonomous or above, MOTHER starts a research mission by itself once a sol while
+  // compute allows and a Research Lab stands; the Foreman deploys it like any other.
+  private maybeAutoMission(): void {
+    const c = this.colony;
+    if (!this.source || c.hourOfSol !== 6) return;
+    if (c.state.autonomy.command < 3 && c.state.autonomy.research < 3) return;
+    if (this.world.getMission()?.status === "planning" || this.world.getMission()?.status === "running") return;
+    if (!c.state.buildings.some((b) => b.type === "researchLab" && b.enabled)) return;
+    if (c.state.compute.solKTok >= c.computeShareAllowed() * c.defs.compute.budgetKTokPerSol) return;
+    const titles = c.defs.missions.autoMissionTitles;
+    const title = titles[this.autoTitle++ % titles.length];
+    c.state.compute.autoMissions++;
+    this.world.logLine(`MOTHER starts a mission on its own: "${title.slice(0, 70)}"`, "warn");
+    void this.source.createMission(title);
+  }
+
+  // Each machine works at its home department's autonomy level.
+  private machineEfficiency(): number {
+    const l = this.world.layout;
+    const machines = l.agents.filter((a) => a.skill !== "orchestrator");
+    if (machines.length === 0) return this.colony.efficiency();
+    let sum = 0;
+    for (const a of machines) {
+      const cap = l.buildings.find((b) => b.id === a.home)?.capability ?? "meeting";
+      sum += this.colony.efficiency(DEPT_OF_CAPABILITY[cap] ?? "command");
+    }
+    return sum / machines.length;
   }
 
   // Called whenever the layout changed outside the economy (Build mode edits, resets).
@@ -784,8 +1024,9 @@ export class ColonyRunner {
   // One game hour, driven by the clock (or by tests).
   step(): void {
     const builders = this.assignBuilders();
-    this.colony.tick(builders);
+    this.colony.tick(builders, this.machineEfficiency());
     this.afterTick();
+    this.maybeAutoMission();
     this.publish();
     this.save();
   }

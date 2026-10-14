@@ -1,12 +1,19 @@
 # Layered on top of vendor/hermes-synapse/docker-compose.yml (vendor files stay untouched).
 #   docker compose -p outpostzero -f vendor/hermes-synapse/docker-compose.yml -f infra/hermes.override.yml up -d
+# Arena teams run one project each: HERMES_PREFIX=outpostzero-a HERMES_PORT=8101 (scripts/arena.sh).
 services:
   backend:
-    container_name: outpostzero-hermes
+    container_name: ${HERMES_PREFIX:-outpostzero}-hermes
     ports: !override
-      - "127.0.0.1:8101:8000" # 8101 on the host (Agent RTS uses 8100): 8000 is a common dev port
+      - "127.0.0.1:${HERMES_PORT:-8101}:8000" # 8101 on the host (Agent RTS uses 8100): 8000 is a common dev port
     environment:
       - SEARXNG_URL=http://searxng:8080
+      # The Outpost Zero Arena API (adapter, docs/arena.md): the plugin's colony tools call it.
+      - ARENA_URL=${ARENA_URL:-http://host.docker.internal:8772}
+      - ARENA_TOKEN=${ARENA_TOKEN:-}
+      - ARENA_TEAM=${ARENA_TEAM:-A}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Upstream also mounts /var/run/docker.sock. No production code uses it, and with the
     # LLM-callable execute_command tool it would hand the model root on the Docker VM. Dropped.
     volumes: !override
@@ -22,28 +29,28 @@ services:
 
   # Hermes' own React dashboard is optional; the game + Mission Control replace it.
   frontend:
-    container_name: outpostzero-hermes-dashboard
+    container_name: ${HERMES_PREFIX:-outpostzero}-hermes-dashboard
     profiles: ["hermes-dashboard"]
     ports: !override
-      - "127.0.0.1:9120:80" # upstream binds every interface
+      - "127.0.0.1:${HERMES_DASHBOARD_PORT:-9120}:80" # upstream binds every interface
 
   db:
-    container_name: outpostzero-hermes-db
+    container_name: ${HERMES_PREFIX:-outpostzero}-hermes-db
     ports: !reset []
 
   qdrant:
-    container_name: outpostzero-hermes-qdrant
+    container_name: ${HERMES_PREFIX:-outpostzero}-hermes-qdrant
     ports: !reset []
 
   sandbox:
-    container_name: outpostzero-hermes-sandbox
+    container_name: ${HERMES_PREFIX:-outpostzero}-hermes-sandbox
     networks:
       sandbox-net:
         aliases: ["jarvis-sandbox"] # hardcoded in backend/subagents.py
 
   searxng:
     image: searxng/searxng:latest
-    container_name: outpostzero-searxng
+    container_name: ${HERMES_PREFIX:-outpostzero}-searxng
     restart: unless-stopped
     environment:
       - SEARXNG_BASE_URL=http://searxng:8080/

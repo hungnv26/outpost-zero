@@ -87,6 +87,8 @@ export class MissionControlSink {
   }
 
   stop(): void {
+    if (this.lobbyTimer) clearTimeout(this.lobbyTimer);
+    this.lobbyTimer = null;
     this.stopped = true;
     this.sseAbort?.abort();
   }
@@ -104,6 +106,64 @@ export class MissionControlSink {
     if (this.warned) return;
     this.warned = true;
     this.world.logLine(`Mission Control sync problem: ${e instanceof Error ? e.message : e}`, "warn");
+  }
+
+  // ---- the Arena lobby (docs/arena.md §3): a task with metadata.arena starts a match when
+  // it is moved to in_progress; the result is written back when the match ends. ----
+  private arena: import("../arena.ts").Arena | null = null;
+  private lobbyTimer: NodeJS.Timeout | null = null;
+  private lobbyTaskId: number | null = null;
+
+  attachArena(arena: import("../arena.ts").Arena): void {
+    this.arena = arena;
+    arena.on("finished", (r: import("../arena.ts").MatchResult) => void this.reportMatch(r));
+    const poll = () => void this.pollLobby().finally(() => {
+      if (!this.stopped) this.lobbyTimer = setTimeout(poll, 10_000);
+    });
+    this.lobbyTimer = setTimeout(poll, 3_000);
+  }
+
+  private async pollLobby(): Promise<void> {
+    if (!this.arena || this.stopped) return;
+    let tasks: any[] = [];
+    try {
+      const res = await this.api("GET", "/api/tasks?status=in_progress&limit=100");
+      tasks = Array.isArray(res) ? res : res?.tasks ?? [];
+    } catch {
+      return;
+    }
+    const match = this.arena.match;
+    const lobby = tasks.filter((t) => t?.metadata && typeof t.metadata === "object" && t.metadata.arena && typeof t.metadata.arena === "object");
+    if (match?.status === "running" && this.lobbyTaskId !== null && !lobby.some((t) => t.id === this.lobbyTaskId)) {
+      // The task left in_progress (done or cancelled in Mission Control): the match stops.
+      this.arena.stop("stopped from Mission Control");
+      return;
+    }
+    if (match?.status === "running") return;
+    const next = lobby.find((t) => t.id !== this.lobbyTaskId);
+    if (!next) return;
+    const a = next.metadata.arena as Record<string, unknown>;
+    try {
+      this.lobbyTaskId = next.id;
+      this.arena.start({ ...a, source: `mc:${next.id}`, model: typeof a.model === "string" ? a.model : this.opts.model } as Partial<import("../arena.ts").MatchConfig>);
+      await this.comment(next.id, `Match started by Outpost Zero: ${JSON.stringify(this.arena.match?.config)}`);
+    } catch (e) {
+      this.world.logLine(`Could not start the match from Mission Control task ${next.id}: ${e}`, "warn");
+    }
+  }
+
+  private async reportMatch(r: import("../arena.ts").MatchResult): Promise<void> {
+    const id = this.lobbyTaskId;
+    if (id === null) return;
+    const p = r.placings[0];
+    const text = [`Match over: ${r.reason}.`, `Winner: ${r.winner ?? "none"}.`, ...r.placings.map((x) => `${x.team} (${x.model}): value ${x.value}, ${x.awake} awake, ${Math.round(x.tokens / 1000)} kTok, ${x.actions} actions (${x.rejected} rejected), latency ${x.avgLatencyS ?? "n/a"} s`)].join("\n");
+    try {
+      await this.comment(id, text);
+      await this.markDone(id, `Match: ${r.reason}. ${p ? `Value ${p.value}, ${p.awake} awake.` : ""}`);
+    } catch (e) {
+      this.world.logLine(`Could not report the match to Mission Control: ${e}`, "warn");
+    }
+    this.lobbyTaskId = null;
   }
 
   private async api(method: string, path: string, body?: unknown, attempt = 0): Promise<any> {

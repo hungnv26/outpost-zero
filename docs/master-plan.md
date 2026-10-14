@@ -128,7 +128,14 @@ Make the numbers come from things on the map.
 - **Done when:** the default build order from the simulator can be played by hand in the game
   and reaches 32 awake by sol 12 with no desync between the HUD and the adapter state.
 
-### Phase 3: Real work in the economy (3 sessions)
+### Phase 3: Real work in the economy (3 sessions) — DONE 2026-10-14
+
+Evidence: a real research mission on the local model earned 80 data in the game (5 steps,
+quality 80 %) and the Scout's trip brought 29 salvage; with Command at Delegated the next
+mission completed with MOTHER approving the report itself; at Autonomous MOTHER started a
+mission on its own at hour 6 (runner test and live); research tiers gate the Fabricator, the
+Relay Dish and the Excavation Site; the Departments tab has the autonomy controls; the strip
+shows data and compute. 32 adapter tests pass; the simulator assumes a mission every two sols.
 
 Hook the agents' real work into the numbers.
 

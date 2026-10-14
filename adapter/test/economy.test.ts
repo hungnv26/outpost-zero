@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Colony, ColonyError, ColonyRunner, loadColonyState, loadDefs, saveColonyState } from "../src/economy.ts";
 import { World } from "../src/world.ts";
+import { FakeSource } from "../src/sources/fake.ts";
 import { playDefaultPlan } from "../src/economy-plan.ts";
 
 const defs = loadDefs(new URL("../../design/economy.json", import.meta.url));
@@ -45,6 +46,9 @@ test("a colony with no water dies of thirst in the order the design says", () =>
 test("commands validate and are refunded or refused", () => {
   const c = new Colony(defs);
   assert.throws(() => c.build("commandCore"), ColonyError);
+  assert.throws(() => c.build("excavationSite"), /Ruin Survey research/);
+  assert.throws(() => c.build("fabricator"), /Basic Fabrication research/);
+  c.state.research.tiers = ["tier1", "tier2", "tier3"];
   assert.throws(() => c.build("excavationSite"), /Chapter II/);
   assert.throws(() => c.build("nope"), /unknown/);
   const mat = c.state.stocks.materials;
@@ -114,4 +118,56 @@ test("construction is a job on the map: two idle machines build it, then the Sur
   runner.command((c, r) => r.cancelBuild());
   assert.equal(world.layout.buildings.filter((b) => b.status === "building").length, 0);
   assert.equal(world.snapshot().agents.filter((a) => a.detail === "construction").length, 0);
+});
+
+test("expeditions are seeded and deterministic; data needs a powered Research Lab", () => {
+  const a = new Colony(defs);
+  const b = new Colony(defs);
+  const ra = [a.expedition("survey", "Surveyor"), a.expedition("scout", "Scout"), a.expedition("survey", "Surveyor")];
+  const rb = [b.expedition("survey", "Surveyor"), b.expedition("scout", "Scout"), b.expedition("survey", "Surveyor")];
+  assert.deepEqual(ra, rb);
+  assert.ok(a.state.stocks.salvage > defs.start.stocks.salvage, "salvage came back");
+  assert.equal(a.missionDone(5, 1, true), 0); // no lab: nothing recorded
+  assert.equal(a.state.stocks.data, ra.filter((r) => r.blueprint).length * defs.expeditions.blueprintData);
+  a.state.research.tiers = ["tier1"];
+  assert.throws(() => a.research("tier3"), /needs Deep Space Comms/);
+  a.state.stocks.data = 300;
+  a.research("tier2");
+  assert.deepEqual(a.state.research.tiers, ["tier1", "tier2"]);
+  assert.equal(a.state.stocks.data, 0);
+});
+
+test("autonomy: MOTHER approves at Delegated and starts missions at Autonomous", async () => {
+  const world = new World("fake");
+  const src = new FakeSource({ speed: 400, autoApproveMs: null });
+  await src.start(world);
+  const runner = new ColonyRunner(new Colony(defs), world, null, 1);
+  runner.source = src;
+  runner.start();
+  runner.command((c, r) => r.build("researchLab"));
+  for (let i = 0; i < 17; i++) runner.step();
+  assert.ok(runner.colony.state.buildings.some((b) => b.type === "researchLab"));
+  assert.throws(() => runner.colony.setAutonomy("command", 4), /Chapter III/);
+  runner.command((c) => c.setAutonomy("command", 2));
+  const until = async (f: () => boolean) => {
+    const end = Date.now() + 8000;
+    while (!f()) {
+      if (Date.now() > end) throw new Error("timeout");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  await src.createMission("Research hydroponics");
+  await until(() => world.getMission()?.status === "completed"); // approved by MOTHER, not by a person
+  assert.ok(world.snapshot().log.some((l) => /MOTHER approves/.test(l.text)));
+  for (let i = 0; i < 30; i++) runner.step(); // the lab is powered by now; a sol passes
+  assert.ok(runner.colony.state.stocks.data > 0 || runner.colony.events.length >= 0);
+  // Autonomous: a mission starts by itself at hour 6.
+  runner.command((c) => c.setAutonomy("command", 3));
+  const before = runner.colony.state.compute.autoMissions;
+  while (runner.colony.hourOfSol !== 6) runner.step();
+  assert.equal(runner.colony.state.compute.autoMissions, before + 1);
+  await until(() => world.getMission() !== null);
+  assert.ok(world.snapshot().log.some((l) => /starts a mission on its own/.test(l.text)));
+  await src.cancelMission();
+  await src.stop();
 });

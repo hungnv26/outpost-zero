@@ -722,6 +722,8 @@ const COLONY_STATS = [
 	["parts", "gear", Color(0.75, 0.78, 0.85), "Parts"],
 	["medicine", "cross", Color(1.0, 0.55, 0.6), "Medicine (doses)"],
 	["colonists", "people", Color(0.9, 0.85, 0.7), "Colonists awake / in cryo"],
+	["data", "research", Color(0.6, 0.85, 1.0), "Data: earned by real missions in a powered Research Lab; buys research"],
+	["compute", "mission", Color(0.85, 0.8, 1.0), "Compute: MOTHER's tokens this sol against the sol budget"],
 	["trust", "shield", Color(0.5, 0.8, 0.95), "Trust: the colonists' confidence in you"],
 	["influence", "eye", Color(0.8, 0.6, 1.0), "Influence: MOTHER's hold on the machines"],
 ]
@@ -831,6 +833,10 @@ func set_colony(c):
 	elif int(col.get("waking", 0)) > 0:
 		col_note = "waking %d" % int(col["waking"])
 	_colony_set("colonists", "%d" % int(col.get("awake", 0)), col_note, col_color)
+	_colony_set("data", _fmt_int(int(float(stocks.get("data", 0)))), _per_sol(float(flows.get("data", 0))))
+	var comp = c.get("compute", {})
+	_colony_set("compute", "%d / %d k" % [int(round(float(comp.get("solKTok", 0)))), int(comp.get("budgetKTok", 0))], "", Ui.BAD if comp.get("exhausted", false) else TEXT)
+	_render_departments_autonomy()
 	var trust = float(c.get("trust", 0))
 	_colony_set("trust", "%d" % int(round(trust)), "", Ui.BAD if trust < 30 else (Ui.WARN if trust < 45 else TEXT))
 	var infl = float(c.get("influence", 0))
@@ -977,6 +983,54 @@ func _build_departments_panel():
 		)
 		v.add_child(row)
 		_legend_rows[dept] = {"count": count}
+		# Autonomy: how much the department's machines decide for themselves (economy).
+		var econ_dept = ECON_DEPT.get(dept, "")
+		if econ_dept != "":
+			var auto = VBoxContainer.new()
+			auto.add_theme_constant_override("separation", 3)
+			var line = HBoxContainer.new()
+			line.add_theme_constant_override("separation", 3)
+			var levels = HBoxContainer.new()
+			levels.add_theme_constant_override("separation", 2)
+			var buttons = []
+			for lv in 5:
+				var b = Button.new()
+				b.text = str(lv)
+				b.toggle_mode = true
+				b.focus_mode = FOCUS_NONE
+				b.custom_minimum_size = Vector2(26, 22)
+				b.add_theme_font_size_override("font_size", 12)
+				var level = lv
+				b.pressed.connect(func(): colony_command.emit({"type": "autonomy.set", "target": econ_dept, "level": level}))
+				levels.add_child(b)
+				buttons.append(b)
+			line.add_child(_label("Autonomy", 12, MUTED))
+			line.add_child(levels)
+			auto.add_child(line)
+			var desc = _label("", 11, MUTED)
+			desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			desc.custom_minimum_size = Vector2(LEFT_W - 60, 0)
+			auto.add_child(desc)
+			v.add_child(auto)
+			_legend_rows[dept]["autonomy"] = buttons
+			_legend_rows[dept]["autonomy_desc"] = desc
+
+
+# Layout departments -> the economy's autonomy departments (Commons has no machines of its own).
+const ECON_DEPT = {"command": "command", "research": "research", "code": "engineering", "knowledge": "knowledge"}
+
+
+func _render_departments_autonomy():
+	var auto = _colony_view.get("autonomy", {})
+	for dept in _legend_rows:
+		var rowv = _legend_rows[dept]
+		if not rowv.has("autonomy"):
+			continue
+		var a = auto.get(ECON_DEPT.get(dept, ""), {})
+		var level = int(a.get("level", 1))
+		for i in rowv["autonomy"].size():
+			rowv["autonomy"][i].button_pressed = i == level
+		rowv["autonomy_desc"].text = "%s: efficiency ×%.2f, approvals: %s, may spend %d%% of compute unasked" % [a.get("name", ""), float(a.get("efficiency", 1.0)), a.get("approvals", ""), int(float(a.get("computeShare", 0)) * 100)]
 
 
 static func _dept_icon(dept: String) -> String:

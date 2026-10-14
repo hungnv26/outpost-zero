@@ -164,6 +164,32 @@ both.
 - **Contract.** `snapshot` and `resource.update` gain `team`; new events `arena.match`,
   `arena.action {team, action, ok, reason, latencyS}` and `arena.score`.
 
+## 8a. What Phase 4 built
+
+- `adapter/src/arena.ts`: the referee. `start(config)` resets the colony from the seed and runs
+  the match; `action(tool, args)` validates (match running, known tool, not frozen, the hourly
+  window) and applies the same code the game's buttons run; the colony's clock resets the window,
+  warns at 90 % of the token budget, freezes at 100 %, and ends the match on the objective
+  (race), the last sol (timed) or the colony's death. `colonyValue()` is §6's formula.
+- `adapter/src/arena-server.ts`: the Arena API on port 8772, bound to all interfaces so the
+  Hermes containers reach it through `host.docker.internal`; every request carries the
+  `x-arena-token` from `.env` (`ARENA_TOKEN`, written by `scripts/gen-env.sh` or added by
+  `scripts/start.sh`). `GET /arena/:team/observation`, `POST /arena/:team/action {tool, args}`,
+  `POST /arena/start`, `POST /arena/stop`. The adapter's own port also answers `GET /arena` and
+  the start/stop posts for local tools and the game.
+- `infra/hermes-plugin/plugin.py`: the `colony_*` tools (`colony_state`, `colony_build`,
+  `colony_cancel_build`, `colony_toggle`, `colony_wake`, `colony_autonomy`, `colony_research`,
+  `colony_repair`, `colony_study`, `colony_note`) as Hermes tool schemas under the `colony` skill,
+  each forwarding to the Arena API; and the **Governor**, the sub-agent that holds that skill.
+  `colony_study` starts a real research mission; expeditions happen inside it.
+- `adapter/src/sources/hermes-governor.ts`: the round loop. Every game hour the referee sends the
+  Governor the observation (first time with the rules), waits for its reply (tools fire in the
+  meantime and get the round's latency), and books its tokens as compute.
+- Mission Control lobby (`sinks/mission-control.ts`): a task in *in progress* whose metadata holds
+  `arena: { mode, objective, sols, tokenBudget, seed, model }` starts a match; moving it out of
+  *in progress* stops it; the result is posted as a comment and the task is marked done.
+  Phase 4 has one team, `A`; team agents arrive with Phase 5.
+
 ## 9. The spectator view
 
 The game shows all bases on one map, each team's characters and banners in its colour. The top

@@ -21,6 +21,8 @@ MC_URL=http://127.0.0.1:3001
 MC_API_KEY=$(rand 24)
 MC_ADMIN_USER=admin
 MC_ADMIN_PASS=$(rand 12)
+# Shared secret between the adapter's Arena API (port 8772) and the Hermes plugin's colony tools.
+ARENA_TOKEN=$(rand 16)
 EOF
   chmod 600 .env
   echo "created .env"
