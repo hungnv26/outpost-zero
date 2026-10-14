@@ -178,7 +178,9 @@ Later phases, not planned in detail yet: Chapters III and IV, endings, factions,
 
 ## 7. Decisions to take before Phase 1
 
-| Decision | Recommendation |
+**Decided 2026-10-14:** every recommendation below was accepted as written. They are now rules.
+
+| Decision | Recommendation (accepted) |
 |---|---|
 | Campaign first or Arena first after the core? | Arena (Phases 4 to 5) before story (Phase 6): it is the differentiator, and Chapter I is enough for Race mode |
 | Colonists as units or as numbers? | crowd units with no AI: cheap, visible, and the map needs people |
