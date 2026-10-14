@@ -64,7 +64,13 @@ cutscene story, pay-to-win anything in the Arena, cloud hosting of other people'
 
 Effort is in focused sessions of a few hours each. Each phase lists what is done when.
 
-### Phase 0: Ground truth (1 session)
+### Phase 0: Ground truth (1 session) — DONE 2026-10-14
+
+Evidence: `scripts/setup.sh` clean; `scripts/start.sh --fake --no-game` played a scripted mission
+through every agent state, approval and report, mirrored into Mission Control on 3001; the real
+stack (Hermes `outpostzero` on 8101, local model) ran a research mission through five steps and
+Human Approval to a sourced report in 378 s; the game window opens as "Outpost Zero" and connects
+to the adapter on 8771. Ollama was started by hand (`ollama serve`), not as a service.
 
 Set the project up and prove the inherited stack runs under the new name.
 
