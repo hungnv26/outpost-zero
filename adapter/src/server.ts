@@ -70,6 +70,10 @@ export function parseCommand(raw: string): ClientCommand | null {
       return typeof c.tier === "string" ? { type: "colony.research", tier: c.tier } : null;
     case "autonomy.set":
       return typeof c.target === "string" && typeof c.level === "number" ? { type: "autonomy.set", target: c.target, level: c.level } : null;
+    case "colony.path":
+      return typeof c.path === "string" ? { type: "colony.path", path: c.path } : null;
+    case "colony.unordered":
+      return typeof c.recall === "boolean" ? { type: "colony.unordered", recall: c.recall } : null;
     default:
       return null;
   }
@@ -104,6 +108,10 @@ export function startServer(world: World, source: Source, port: number, host = "
             return c.research(cmd.tier);
           case "autonomy.set":
             return c.setAutonomy(cmd.target, cmd.level);
+          case "colony.path":
+            return c.choosePath(cmd.path);
+          case "colony.unordered":
+            return r.recallUnordered(cmd.recall);
         }
       });
     }

@@ -89,6 +89,18 @@ if (env.COLONY !== "0") {
     await source.layoutChanged?.(l);
   };
   colony.source = source;
+  if (sourceName === "hermes" && env.MOTHER_VOICE !== "0") {
+    const voice = new HermesGovernor({ baseUrl: env.HERMES_URL ?? "http://127.0.0.1:8101", token: env.HERMES_TOKEN ?? "dev_master_token", agentId: "writer", timeoutMs: 50_000 });
+    colony.narrate = async (card, c) => {
+      voice.newChat();
+      const v = c.view();
+      const r = await voice.ask(
+        `You are MOTHER, the colony AI of Outpost Zero, speaking to the commander. Retell this event in two or three sentences, in the first person, cold and precise, without inventing numbers: "${card.title}: ${card.text}" Colony now: sol ${v.sol}, ${v.colonists.awake} awake, ${v.colonists.cryo} in cryo, trust ${v.trust}, your influence ${v.influence}, chapter ${v.chapter}. Reply with the sentences only.`,
+      );
+      if (r.tokens > 0) c.useCompute(r.tokens);
+      return r.timedOut ? "" : r.text;
+    };
+  }
   colony.start();
   if (!saved) world.logLine("Sol 0: Odyssey-7 is down. 24 colonists awake, 198 in cryo. Keep them alive.", "warn");
 }

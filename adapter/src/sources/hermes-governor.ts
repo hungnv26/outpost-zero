@@ -22,6 +22,7 @@ export class HermesGovernor {
   private opts: Required<GovernorOpts>;
   chatId = `arena_${randomUUID().slice(0, 8)}`;
   private routed = false;
+  private estimated = 0; // cumulative estimate for this chat when Hermes reports nothing
 
   constructor(opts: GovernorOpts) {
     this.opts = { agentId: "governor", timeoutMs: 70_000, ...opts };
@@ -30,6 +31,7 @@ export class HermesGovernor {
   newChat(): void {
     this.chatId = `arena_${randomUUID().slice(0, 8)}`;
     this.routed = false;
+    this.estimated = 0;
   }
 
   private async api(method: string, path: string, body?: unknown): Promise<unknown> {
@@ -62,7 +64,11 @@ export class HermesGovernor {
         } catch {
           /* closed */
         }
-        resolve({ text, tokens, latencyS: Math.round((Date.now() - started) / 100) / 10, timedOut });
+        // Hermes does not always report this chat in logs_update; fall back to an estimate
+        // (four characters a token) so the budget still counts the round.
+        const estimate = Math.ceil((prompt.length + text.length) / 4);
+        if (tokens === 0) this.estimated += estimate;
+        resolve({ text, tokens: tokens > 0 ? tokens : this.estimated, latencyS: Math.round((Date.now() - started) / 100) / 10, timedOut });
       };
       const timer = setTimeout(() => finish("", true), this.opts.timeoutMs);
       ws.on("open", () => ws.send(JSON.stringify({ type: "chat_message", content: prompt, chat_id: this.chatId })));

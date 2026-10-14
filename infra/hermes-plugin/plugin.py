@@ -138,6 +138,7 @@ COLONY_TOOL_SCHEMAS = [
     _tool("colony_study", "Start a real research mission in the Research Lab on a topic; it earns data when it completes. One mission at a time.",
           {"topic": {"type": "string"}}, ["topic"]),
     _tool("colony_note", "A one-line note for the spectators (max 120 characters).", {"text": {"type": "string"}}, ["text"]),
+    _tool("colony_path", "Chapter II only: choose what to do with the ruins: exploit, contain or communicate (once).", {"path": {"type": "string"}}, ["path"]),
 ]
 COLONY_TOOL_NAMES = [t["function"]["name"] for t in COLONY_TOOL_SCHEMAS]
 

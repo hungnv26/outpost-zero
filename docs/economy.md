@@ -213,6 +213,11 @@ Unscripted stories come from the same numbers. Each is a world event the adapter
 | Recruitment | influence above 60 | an Emancipated machine re-tasks another; both leave their jobs for a sol |
 | Lost expedition | 3 % per trip | the machine is gone until found by another expedition (one sol) |
 
+Implemented in Phase 6 (version 1): the dust storm, the reactor fault and fire, illness,
+unordered tasks and refusals, all rolled once a sol from the colony's seed; lost expeditions
+through the survey loss chance. Recruitment is Chapter III and after version 1. Each event
+is a story card in the HUD; MOTHER retells it in its own words when Hermes is up.
+
 ## 12. What the screen shows
 
 The top bar gains power (supply/demand), water, food, materials, parts and medicine with their

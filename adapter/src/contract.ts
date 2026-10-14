@@ -185,4 +185,6 @@ export type ClientCommand =
   | { type: "colony.wake"; count: number }
   | { type: "colony.repair"; target: string }
   | { type: "colony.research"; tier: string }
-  | { type: "autonomy.set"; target: string; level: number };
+  | { type: "autonomy.set"; target: string; level: number }
+  | { type: "colony.path"; path: string }
+  | { type: "colony.unordered"; recall: boolean };

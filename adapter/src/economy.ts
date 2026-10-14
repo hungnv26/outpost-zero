@@ -55,6 +55,42 @@ export interface EconomyDefs {
   research: { tiers: Record<string, { cost: number; name: string; unlocks: string[] }> };
   expeditions: { hours: number; tripsPerSol: number; salvage: { min: number; max: number }; blueprintChance: number; artifactChanceAfterChapterII: number; lossChance: number; blueprintData: number; lossParts: number };
   missions: { dataPerStep: number; dataPerApprovedReport: number; computeKTokPerStepTypical: number; reviewerQuality: { approve: number; needsWork: number; unknown: number }; autoMissionTitles: string[] };
+  paths: Record<string, { excavationYield?: number; excavationAllowed?: boolean; influencePerSol?: number; trustPerSol?: number; trustOnce?: number; motherActsAtAutonomy?: number }>;
+  events: {
+    dustStorm: { chancePerSol: number; solsMin: number; solsMax: number; solarFactor: number; expeditionLossFactor: number };
+    reactorFault: { below: number; outputFactor: number; fireAfterSols: number; fireMaterials: number };
+    illness: { chancePerColonistWhenThirsty: number; medicinePerSol: number; deathChanceWithoutMedicine: number; recoverSols: number };
+    unorderedTask: { influenceAbove: number; chancePerMachine: number; influenceIfLet: number; influenceIfRecalled: number };
+    refusal: { influenceAbove: number; chancePerOrder: number };
+  };
+  story: { chapterII: { surplusSols: number }; chapterIII: { influence: number }; signalSolsAfterDish: number; cards: Record<string, { title: string; text: string }> };
+}
+
+export interface StoryCard {
+  id: string;
+  key: string;
+  sol: number;
+  title: string;
+  text: string;
+  choices?: string[];
+}
+
+export interface StoryState {
+  path: "exploit" | "contain" | "communicate" | null;
+  surplusSols: number;
+  twistDone: boolean;
+  signalReceived: boolean;
+  dishSols: number;
+  cards: StoryCard[];
+  nextCard: number;
+}
+
+export interface EventState {
+  dustStormSols: number;
+  reactorFaultSols: number;
+  sick: number;
+  sickSols: number;
+  unordered: { agent: string | null; solsLeft: number } | null;
 }
 
 export const DEPTS = ["command", "research", "engineering", "knowledge"] as const;
@@ -93,6 +129,8 @@ export interface ColonyState {
   research: { tiers: string[]; alienTech: boolean };
   compute: { solKTok: number; totalKTok: number; missions: number; autoMissions: number };
   rngCounter: number;
+  story: StoryState;
+  events: EventState;
   stocks: Record<Stock, number>;
   trust: number;
   influence: number;
@@ -126,6 +164,8 @@ export interface ColonyView {
   autonomyLevels: { level: number; name: string; efficiency: number; computeShare: number; approvals: string; influenceDriftPerSol: number }[];
   research: { tiers: string[]; alienTech: boolean; options: { id: string; name: string; cost: number; unlocks: string[]; done: boolean; affordable: boolean }[] };
   compute: { solKTok: number; budgetKTok: number; exhausted: boolean; missions: number; autoMissions: number };
+  story: { chapter: string; path: string | null; signalReceived: boolean; card: StoryCard | null; cards: StoryCard[] };
+  events: { dustStormSols: number; reactorFault: boolean; sick: number; unordered: string | null };
   buildings: {
     id: string; type: string; label: string; dept: string; enabled: boolean; powered: boolean; producing: boolean;
     crew: number; crewNeeded: number; drawKw: number; in: Record<string, number>; out: Record<string, number>; permanent: boolean; note: string;
@@ -183,6 +223,7 @@ export class Colony {
   constructor(defs: EconomyDefs, state?: ColonyState) {
     this.defs = defs;
     this.state = state ?? Colony.initial(defs);
+    if (!state) this.card("landing");
   }
 
   static initial(defs: EconomyDefs, seed = 4217): ColonyState {
@@ -201,6 +242,8 @@ export class Colony {
       research: { tiers: [], alienTech: false },
       compute: { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 },
       rngCounter: 0,
+      story: { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1 },
+      events: { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null },
       stocks,
       trust: s.trust,
       influence: s.influence,
@@ -268,6 +311,63 @@ export class Colony {
     x = Math.imul(x ^ (x >>> 16), 0x85ebca6b) >>> 0;
     x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35) >>> 0;
     return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  }
+
+  // ---- story (docs/story.md): cards the HUD shows, chapters as economic gates ----
+
+  card(key: string, choices?: string[]): StoryCard {
+    const d = this.defs.story.cards[key] ?? { title: key, text: "" };
+    const s = this.state;
+    const c: StoryCard = { id: `c${s.story.nextCard++}`, key, sol: this.sol, title: d.title, text: d.text, ...(choices ? { choices } : {}) };
+    s.story.cards.push(c);
+    if (s.story.cards.length > 12) s.story.cards.splice(0, s.story.cards.length - 12);
+    this.note(`${c.title}: ${c.text}`, "warn");
+    return c;
+  }
+
+  // MOTHER's voice (the runner rewrites a card's text with the real model).
+  retell(cardId: string, text: string): void {
+    const c = this.state.story.cards.find((x) => x.id === cardId);
+    if (c && text.trim()) c.text = text.trim().slice(0, 600);
+  }
+
+  choosePath(path: string): void {
+    const s = this.state;
+    if (s.chapter === "I") throw new ColonyError("the ruins have not been found yet");
+    if (s.story.path) throw new ColonyError(`the colony already chose to ${s.story.path}`);
+    if (!this.defs.paths[path]) throw new ColonyError(`unknown path "${path}"`);
+    s.story.path = path as StoryState["path"];
+    const p = this.defs.paths[path];
+    if (p.trustOnce) s.trust = Math.max(0, Math.min(100, s.trust + p.trustOnce));
+    this.card(path);
+  }
+
+  private enterChapter(ch: ColonyState["chapter"]): void {
+    const s = this.state;
+    if (s.chapter === ch) return;
+    s.chapter = ch;
+    if (ch === "II") this.card("chapterII", ["exploit", "contain", "communicate"]);
+    if (ch === "III") this.card("chapterIII");
+  }
+
+  // Resolve the unordered task: recall the machine (it comes back now) or let it finish.
+  resolveUnordered(recall: boolean): void {
+    const s = this.state;
+    if (!s.events.unordered) throw new ColonyError("no machine is off on its own");
+    const e = this.defs.events.unorderedTask;
+    s.influence = Math.max(0, Math.min(100, s.influence + (recall ? e.influenceIfRecalled : e.influenceIfLet)));
+    this.note(recall ? "the machine was recalled; it came back without a word" : "you let the machine finish; MOTHER's influence grew", recall ? "info" : "warn");
+    s.events.unordered = null;
+  }
+
+  // The runner asks before sending a machine to work: at high influence some refuse.
+  refuses(): boolean {
+    const s = this.state;
+    const e = this.defs.events.refusal;
+    if (s.influence <= e.influenceAbove) return false;
+    if (this.roll() >= e.chancePerOrder) return false;
+    this.card("refusal");
+    return true;
   }
 
   hasPowered(type: string): boolean {
@@ -435,7 +535,7 @@ export class Colony {
     const e = this.defs.expeditions;
     const s = this.state;
     const r = this.roll();
-    const lost = kind === "survey" && r < e.lossChance;
+    const lost = kind === "survey" && r < e.lossChance * (s.events.dustStormSols > 0 ? this.defs.events.dustStorm.expeditionLossFactor : 1);
     let salvage = Math.round(e.salvage.min + this.roll() * (e.salvage.max - e.salvage.min));
     if (kind === "scout") salvage = Math.round(salvage / 2);
     const blueprint = kind === "survey" && this.roll() < e.blueprintChance;
@@ -448,6 +548,15 @@ export class Colony {
     this.deliver("salvage", salvage, `${agentName} returned`);
     if (blueprint) this.deliver("data", e.blueprintData, `${agentName} found a blueprint in the wreckage`);
     if (artifact) this.deliver("artifacts", 1, `${agentName} brought back something that is in no database`);
+    // The Chapter I twist: once the colony has had food and water to spare for a few sols,
+    // the next machine that goes out comes back with something nobody asked for.
+    if (s.chapter === "I" && !s.story.twistDone && s.story.surplusSols >= this.defs.story.chapterII.surplusSols) {
+      s.story.twistDone = true;
+      this.add("artifacts", 1);
+      this.card("twist");
+      this.enterChapter("II");
+      return { salvage, blueprint, artifact: true, lost };
+    }
     return { salvage, blueprint, artifact, lost };
   }
 
@@ -489,15 +598,16 @@ export class Colony {
     const striking = s.trust < D.trust.thresholds.strike;
 
     // Labour: humans work their share of the sol (halved on strike); machines are added once we know they have power.
-    let labour = s.awake * (D.colonists.workHoursPerSol / H) * (striking ? 0.5 : 1);
+    let labour = Math.max(0, s.awake - s.events.sick) * (D.colonists.workHoursPerSol / H) * (striking ? 0.5 : 1);
     const buildMachines = s.building ? Math.min(builders ?? 2, s.machines) : 0;
 
     // Power supply.
     const gen = D.buildings.landingModule.powerGenKw ?? 0;
-    let supply = gen * s.reactor;
+    let supply = gen * s.reactor * (s.events.reactorFaultSols > 0 ? D.events.reactorFault.outputFactor : 1);
+    const solarFactor = s.events.dustStormSols > 0 ? D.events.dustStorm.solarFactor : 1;
     for (const b of s.buildings) {
       const d = D.buildings[b.type];
-      if (b.enabled && d.powerGenKwPeak && daylight) supply += d.powerGenKwPeak;
+      if (b.enabled && d.powerGenKwPeak && daylight) supply += d.powerGenKwPeak * solarFactor;
     }
     // Demand, served in priority order; the first class that cannot be served is cut.
     const draws: { cls: string; kw: number; building?: BuildingInst }[] = [
@@ -553,7 +663,8 @@ export class Colony {
       labour -= d.crew ?? 0;
       crews[b.id] = d.crew ?? 0;
       for (const [r, v] of Object.entries(d.in ?? {})) this.add(r as Stock, -v);
-      for (const [r, v] of Object.entries(d.out)) this.add(r as Stock, v * (d.machinesOnly ? eff : 1));
+      const yieldFactor = b.type === "excavationSite" ? (s.story.path ? this.defs.paths[s.story.path].excavationYield ?? 1 : 1) : 1;
+      for (const [r, v] of Object.entries(d.out)) this.add(r as Stock, v * (d.machinesOnly ? eff : 1) * yieldFactor);
       producing.add(b.id);
     }
 
@@ -639,6 +750,95 @@ export class Colony {
     if (s.shortSols.water >= D.colonists.thirstDeathSols) this.kill(Math.max(1, Math.round(s.awake * 0.1)), "thirst");
     if (striking) this.note("the colonists are on strike (trust below 30); human labour halved", "warn");
     s.shortHours = { food: 0, water: 0, air: 0 };
+    this.endSolStory(hungry, thirsty);
+  }
+
+  private endSolStory(hungry: boolean, thirsty: boolean): void {
+    const s = this.state;
+    const D = this.defs;
+    const E = D.events;
+    const foodUp = s.deltas.food.reduce((a, b) => a + b, 0) >= 0 || s.stocks.food >= 0.9 * this.cap("food");
+    const waterUp = s.deltas.water.reduce((a, b) => a + b, 0) >= 0 || s.stocks.water >= 0.9 * this.cap("water");
+    s.story.surplusSols = !hungry && !thirsty && foodUp && waterUp ? s.story.surplusSols + 1 : 0;
+    if (s.story.path) {
+      const p = D.paths[s.story.path];
+      s.influence = Math.max(0, Math.min(100, s.influence + (p.influencePerSol ?? 0)));
+      s.trust = Math.max(0, Math.min(100, s.trust + (p.trustPerSol ?? 0)));
+    }
+    const sites = s.buildings.filter((b) => b.type === "excavationSite" && b.enabled).length;
+    if (sites) s.influence = Math.min(100, s.influence + sites * 1.0);
+    if (s.chapter !== "I" && !s.story.signalReceived && this.hasPowered("relayDish")) {
+      s.story.dishSols++;
+      if (s.story.dishSols >= D.story.signalSolsAfterDish) {
+        s.story.signalReceived = true;
+        this.card("signal");
+      }
+    }
+    if (s.chapter === "II" && (s.influence >= D.story.chapterIII.influence || this.maxAutonomy() >= 4)) this.enterChapter("III");
+    if (s.events.dustStormSols > 0) {
+      s.events.dustStormSols--;
+      if (s.events.dustStormSols === 0) this.note("the dust storm has passed");
+    } else if (this.roll() < E.dustStorm.chancePerSol) {
+      s.events.dustStormSols = E.dustStorm.solsMin + Math.floor(this.roll() * (E.dustStorm.solsMax - E.dustStorm.solsMin + 1));
+      this.card("dustStorm");
+    }
+    if (s.reactor < E.reactorFault.below) {
+      if (s.events.reactorFaultSols === 0) this.card("reactorFault");
+      s.events.reactorFaultSols++;
+      if (s.events.reactorFaultSols > E.reactorFault.fireAfterSols) {
+        this.add("materials", -E.reactorFault.fireMaterials);
+        this.card("fire");
+        this.kill(1, "the fire in the Landing Module");
+        s.events.reactorFaultSols = 1;
+      }
+    } else if (s.events.reactorFaultSols > 0) {
+      s.events.reactorFaultSols = 0;
+      this.note("the reactor runs clean again");
+    }
+    if (thirsty && s.awake > s.events.sick) {
+      let fell = 0;
+      for (let i = 0; i < s.awake - s.events.sick; i++) if (this.roll() < E.illness.chancePerColonistWhenThirsty) fell++;
+      if (fell) {
+        if (s.events.sick === 0) this.card("illness");
+        s.events.sick += fell;
+        s.events.sickSols = 0;
+      }
+    }
+    if (s.events.sick > 0) {
+      const need = s.events.sick * E.illness.medicinePerSol;
+      if (s.stocks.medicine >= need) {
+        this.add("medicine", -need);
+        s.events.sickSols++;
+        if (s.events.sickSols >= E.illness.recoverSols) {
+          this.note(`${s.events.sick} colonists recovered`);
+          s.events.sick = 0;
+          s.events.sickSols = 0;
+        }
+      } else {
+        let died = 0;
+        for (let i = 0; i < s.events.sick; i++) if (this.roll() < E.illness.deathChanceWithoutMedicine) died++;
+        if (died) {
+          this.kill(died, "illness without medicine");
+          s.events.sick = Math.max(0, s.events.sick - died);
+        }
+      }
+    }
+    if (s.events.unordered) {
+      s.events.unordered.solsLeft--;
+      if (s.events.unordered.solsLeft <= 0) {
+        s.influence = Math.min(100, s.influence + E.unorderedTask.influenceIfLet);
+        this.note("the machine finished whatever it was doing and came back");
+        s.events.unordered = null;
+      }
+    } else if (s.influence > E.unorderedTask.influenceAbove) {
+      for (let i = 0; i < s.machines; i++) {
+        if (this.roll() < E.unorderedTask.chancePerMachine) {
+          s.events.unordered = { agent: null, solsLeft: 1 };
+          this.card("unordered");
+          break;
+        }
+      }
+    }
   }
 
   // ---- view and persistence ----
@@ -680,6 +880,8 @@ export class Colony {
         options: Object.entries(this.defs.research.tiers).map(([id, t]) => ({ id, name: t.name, cost: t.cost, unlocks: t.unlocks, done: id === "alienTech" ? s.research.alienTech : s.research.tiers.includes(id), affordable: s.stocks.data >= t.cost })),
       },
       compute: { solKTok: r1(s.compute.solKTok), budgetKTok: this.defs.compute.budgetKTokPerSol, exhausted: this.computeExhausted(), missions: s.compute.missions, autoMissions: s.compute.autoMissions },
+      story: { chapter: s.chapter, path: s.story.path, signalReceived: s.story.signalReceived, card: s.story.cards[s.story.cards.length - 1] ?? null, cards: s.story.cards },
+      events: { dustStormSols: s.events.dustStormSols, reactorFault: s.events.reactorFaultSols > 0, sick: s.events.sick, unordered: s.events.unordered?.agent ?? (s.events.unordered ? "a machine" : null) },
       buildings: s.buildings.map((b) => {
         const d = this.defs.buildings[b.type];
         const draws = Boolean(d.class && d.drawKw);
@@ -727,6 +929,8 @@ export function loadColonyState(path: string): ColonyState | null {
     s.research ??= { tiers: [], alienTech: false };
     s.compute ??= { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 };
     s.rngCounter ??= 0;
+    s.story ??= { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1 };
+    s.events ??= { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null };
     return s;
   } catch {
     return null; // a damaged save starts a new colony
@@ -840,7 +1044,8 @@ export class ColonyRunner {
   private maybeAutoMission(): void {
     const c = this.colony;
     if (!this.source || c.hourOfSol !== 6) return;
-    if (c.state.autonomy.command < 3 && c.state.autonomy.research < 3) return;
+    const communicate = c.state.story.path === "communicate";
+    if (!communicate && c.state.autonomy.command < 3 && c.state.autonomy.research < 3) return;
     if (this.world.getMission()?.status === "planning" || this.world.getMission()?.status === "running") return;
     if (!c.state.buildings.some((b) => b.type === "researchLab" && b.enabled)) return;
     if (c.state.compute.solKTok >= c.computeShareAllowed() * c.defs.compute.budgetKTokPerSol) return;
@@ -934,10 +1139,56 @@ export class ColonyRunner {
   // Reset base = a new colony.
   reset(): void {
     this.colony.state = Colony.initial(this.colony.defs);
+    this.colony.card("landing");
+    this.narrated.clear();
     this.syncWithLayout();
     this.world.logLine("Sol 0: a new colony. Odyssey-7 is down; 24 colonists awake, 198 in cryo.", "warn");
     this.publish();
     this.save();
+  }
+
+  // MOTHER's voice: main.ts sets this to a function that rewrites a card with the real model.
+  narrate: ((card: StoryCard, colony: Colony) => Promise<string>) | null = null;
+  private narrated = new Set<string>();
+
+  private tellStory(): void {
+    const c = this.colony;
+    const card = c.state.story.cards[c.state.story.cards.length - 1];
+    if (!card || this.narrated.has(card.id)) return;
+    this.narrated.add(card.id);
+    if (!this.narrate) return;
+    const id = card.id;
+    this.narrate(card, c)
+      .then((text) => {
+        if (!text.trim()) return;
+        c.retell(id, text);
+        this.world.logLine(`MOTHER: ${text.trim().slice(0, 200)}`, "warn", "commander");
+        this.publish();
+        this.save();
+      })
+      .catch(() => {
+        /* the written card stands */
+      });
+  }
+
+  // An unordered task on the map: the machine walks off to a building of its own choosing.
+  private syncUnordered(): void {
+    const u = this.colony.state.events.unordered;
+    if (!u || u.agent) return;
+    const idle = this.world.layout.agents.filter((a) => a.skill !== "orchestrator" && this.world.getAgent(a.id)?.state === "idle");
+    const pick = idle[Math.floor(this.colony.roll() * idle.length)];
+    if (!pick) return;
+    u.agent = pick.id;
+    const targets = this.world.layout.buildings.filter((b) => b.id !== pick.home && b.status !== "building");
+    const to = targets[Math.floor(this.colony.roll() * targets.length)] ?? this.world.layout.buildings[0];
+    this.world.setAgent(pick.id, { state: "working", building: to.id, taskId: null, taskTitle: "An unordered task", detail: "unordered", progress: null });
+    this.world.logLine(`${pick.name} left for the ${to.label} without being asked.`, "warn", pick.id);
+  }
+
+  recallUnordered(recall: boolean): void {
+    const u = this.colony.state.events.unordered;
+    this.colony.resolveUnordered(recall);
+    if (u?.agent && this.world.getAgent(u.agent)?.detail === "unordered") this.world.setAgent(u.agent, { state: "idle" });
   }
 
   // Machines at the site this hour: idle ones are sent, ones a mission took are not chased.
@@ -954,6 +1205,10 @@ export class ColonyRunner {
       if (a.skill === "orchestrator" || there.some((t) => t.id === a.id)) continue;
       const st = this.world.getAgent(a.id);
       if (!st || st.state !== "idle") continue;
+      if (this.colony.refuses()) {
+        this.world.logLine(`${a.name} declined to build the ${labelOf(site.type)}.`, "warn", a.id);
+        continue;
+      }
       this.world.setAgent(a.id, { state: "working", building: site.id, taskId: null, taskTitle: `Building the ${labelOf(site.type)}`, detail: "construction", progress: 0 });
       n++;
     }
@@ -1029,7 +1284,9 @@ export class ColonyRunner {
     const builders = this.assignBuilders();
     this.colony.tick(builders, this.machineEfficiency());
     this.afterTick();
+    this.syncUnordered();
     this.maybeAutoMission();
+    this.tellStory();
     this.publish();
     this.save();
   }

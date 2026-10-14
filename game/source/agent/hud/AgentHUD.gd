@@ -90,6 +90,12 @@ var _cards = {}
 var _input: LineEdit
 var _deploy: Button
 var _abort: Button
+var _story_panel: PanelContainer
+var _story_title: Label
+var _story_text: Label
+var _story_actions: HBoxContainer
+var _story_shown = ""  # id of the card on screen
+var _story_dismissed = ""  # id the player closed
 var _arena_panel: PanelContainer
 var _arena_rows: VBoxContainer
 var _arena_title: Label
@@ -154,6 +160,7 @@ func _ready():
 		add_child(snapshots)
 	_build_top_bar()
 	_build_arena_panel()
+	_build_story_panel()
 	_build_mission_panel()
 	_build_departments_panel()
 	_build_roster()
@@ -842,6 +849,7 @@ func set_colony(c):
 	var comp = c.get("compute", {})
 	_colony_set("compute", "%d / %d k" % [int(round(float(comp.get("solKTok", 0)))), int(comp.get("budgetKTok", 0))], "", Ui.BAD if comp.get("exhausted", false) else TEXT)
 	_render_departments_autonomy()
+	set_story(c.get("story"), c.get("events", {}))
 	var trust = float(c.get("trust", 0))
 	_colony_set("trust", "%d" % int(round(trust)), "", Ui.BAD if trust < 30 else (Ui.WARN if trust < 45 else TEXT))
 	var infl = float(c.get("influence", 0))
@@ -1503,6 +1511,81 @@ static func _rate_text(inputs: Dictionary, outputs: Dictionary) -> String:
 	return (fmt.call(inputs) + " → " + out) if not inputs.is_empty() else out
 
 
+# ---------- top centre: story cards (docs/story.md) ----------
+
+
+func _build_story_panel():
+	_story_panel = _panel(BG_SOLID)
+	_story_panel.set_anchors_and_offsets_preset(PRESET_CENTER_TOP)
+	_story_panel.offset_top = TOP_H + 14
+	_story_panel.offset_left = -270
+	_story_panel.offset_right = 270
+	_story_panel.visible = false
+	add_child(_story_panel)
+	var v = VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	_story_panel.add_child(v)
+	var head = _title("MOTHER", "command")
+	_story_title = _label("", 15, TEXT)
+	_story_title.add_theme_font_override("font", Ui.bold())
+	head.add_child(_story_title)
+	head.add_child(_icon_button("close", "Dismiss", func(): _dismiss_story(), 24))
+	v.add_child(head)
+	_story_text = _label("", 13, TEXT)
+	_story_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_story_text.custom_minimum_size = Vector2(500, 0)
+	v.add_child(_story_text)
+	_story_actions = HBoxContainer.new()
+	_story_actions.add_theme_constant_override("separation", 8)
+	v.add_child(_story_actions)
+
+
+func _dismiss_story():
+	_story_dismissed = _story_shown
+	_story_panel.visible = false
+
+
+# The latest card from the colony: shown once per card; the Chapter II card offers the
+# three paths, the unordered-task card lets you recall the machine or let it finish.
+func set_story(story, events):
+	if story == null or story.is_empty():
+		return
+	var card = story.get("card")
+	if card == null or card.is_empty() or card.get("id", "") == _story_dismissed or replay_active:
+		if card == null or card.get("id", "") == _story_dismissed:
+			_story_panel.visible = false
+		return
+	var id = card.get("id", "")
+	var sig = "%s|%s|%s|%s" % [id, card.get("text", ""), str(story.get("path")), str(events.get("unordered"))]
+	if sig == _story_shown + "|" + str(_story_panel.get_meta("sig", "")):
+		return
+	_story_shown = id
+	_story_panel.set_meta("sig", sig.substr(id.length() + 1))
+	_story_panel.visible = true
+	_story_title.text = "Sol %d · %s" % [int(card.get("sol", 0)), card.get("title", "")]
+	_story_text.text = card.get("text", "")
+	for c in _story_actions.get_children():
+		_story_actions.remove_child(c)
+		c.queue_free()
+	if card.has("choices") and story.get("path") == null:
+		for p in card["choices"]:
+			var b = _button(str(p).capitalize(), p == "contain")
+			var path = p
+			b.pressed.connect(func(): colony_command.emit({"type": "colony.path", "path": path}))
+			_story_actions.add_child(b)
+	elif card.get("key", "") == "unordered" and events.get("unordered") != null:
+		var recall = _button("Recall it", true)
+		recall.pressed.connect(func(): colony_command.emit({"type": "colony.unordered", "recall": true}))
+		_story_actions.add_child(recall)
+		var let = _button("Let it finish")
+		let.pressed.connect(func(): colony_command.emit({"type": "colony.unordered", "recall": false}))
+		_story_actions.add_child(let)
+	var chapter = _label("Chapter %s%s" % [story.get("chapter", "I"), ("" if story.get("path") == null else " · " + str(story.get("path")).capitalize())], 12, MUTED)
+	chapter.size_flags_horizontal = SIZE_EXPAND_FILL
+	chapter.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_story_actions.add_child(chapter)
+
+
 # ---------- top centre: the match scoreboard (Arena) ----------
 
 
@@ -1539,6 +1622,7 @@ func set_arena(a):
 		_arena_panel.visible = false
 		return
 	_arena_panel.visible = not replay_active
+	_arena_panel.offset_top = TOP_H + 14 + (150 if _story_panel != null and _story_panel.visible else 0)
 	_arena_title.text = "%s · %s · sol %d / %d" % [str(a.get("mode", "")).to_upper(), str(a.get("objectiveText", "")), int(a.get("sol", 0)), int(a.get("sols", 0))]
 	var r = a.get("result")
 	if r != null and not r.is_empty():

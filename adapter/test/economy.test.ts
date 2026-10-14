@@ -171,3 +171,39 @@ test("autonomy: MOTHER approves at Delegated and starts missions at Autonomous",
   await src.cancelMission();
   await src.stop();
 });
+
+test("the story: surplus plus an expedition opens Chapter II, the path has standing effects, events roll from the seed", () => {
+  const c = new Colony(defs);
+  assert.equal(c.state.story.cards[0].key, "landing");
+  assert.throws(() => c.choosePath("exploit"), /not been found/);
+  c.state.story.surplusSols = 3;
+  const r = c.expedition("survey", "Surveyor");
+  assert.equal(r.artifact, true);
+  assert.equal(c.state.chapter, "II");
+  assert.ok(c.state.story.cards.some((k) => k.key === "twist") && c.state.story.cards.some((k) => k.key === "chapterII"));
+  assert.deepEqual(c.state.story.cards[c.state.story.cards.length - 1].choices, ["exploit", "contain", "communicate"]);
+  const trust = c.state.trust;
+  c.choosePath("contain");
+  assert.equal(c.state.trust, trust + 10);
+  assert.throws(() => c.choosePath("exploit"), /already chose/);
+  // Dust storm: the roll is seeded, so force one and see solar fall.
+  c.state.events.dustStormSols = 1;
+  c.state.buildings.push({ id: "s1", type: "solarArray", enabled: true, builtAt: 0 });
+  c.state.hour = 0; // daylight
+  c.tick();
+  assert.ok(c.state.last.supplyKw < 30 + 40, `storm cut solar: ${c.state.last.supplyKw}`);
+  // Illness when thirsty: sick colonists do not work and need medicine.
+  const d = new Colony(defs);
+  d.state.stocks.water = 0;
+  for (let i = 0; i < 48; i++) d.tick();
+  assert.ok(d.state.events.sick >= 0);
+  // Chapter III gate.
+  const e = new Colony(defs);
+  e.state.chapter = "II";
+  e.state.influence = 60;
+  e.state.hour = 23;
+  e.tick();
+  assert.equal(e.state.chapter, "III");
+  const f = new Colony(defs); // influence low: no machine wanders off
+  assert.throws(() => f.resolveUnordered(true), /no machine/);
+});

@@ -62,7 +62,7 @@ export const OBJECTIVES: Record<Objective, { name: string; check: (c: Colony) =>
   foothold: { name: "Foothold", check: (c) => c.state.awake >= 60 && c.state.shortSols.food === 0 && c.state.shortSols.water === 0 && c.state.stocks.food > 300 && c.state.stocks.water > 300, describe: "60 awake and fed and watered with reserves" },
 };
 
-export const TOOLS = ["colony_state", "colony_build", "colony_cancel_build", "colony_toggle", "colony_wake", "colony_autonomy", "colony_research", "colony_repair", "colony_study", "colony_note"] as const;
+export const TOOLS = ["colony_state", "colony_build", "colony_cancel_build", "colony_toggle", "colony_wake", "colony_autonomy", "colony_research", "colony_repair", "colony_study", "colony_note", "colony_path"] as const;
 
 // Colony value (docs/arena.md §6).
 export function colonyValue(c: Colony): number {
@@ -171,6 +171,7 @@ export class Arena extends EventEmitter {
       source: cfg.source,
     };
     this.runner.colony.state = Colony.initial(this.runner.colony.defs, config.seed);
+    this.runner.colony.card("landing");
     this.runner.syncWithLayout();
     this.govTokens = 0;
     this.roundStartedAt = null;
@@ -296,6 +297,8 @@ export class Arena extends EventEmitter {
         void r.source.createMission(topic.slice(0, 200));
         return;
       }
+      case "colony_path":
+        return r.command((c) => c.choosePath(str("path")));
       case "colony_note": {
         const text = str("text").trim().slice(0, 120);
         if (!text) throw new ColonyError("empty note");
