@@ -757,8 +757,10 @@ export class Colony {
     const s = this.state;
     const D = this.defs;
     const E = D.events;
-    const foodUp = s.deltas.food.reduce((a, b) => a + b, 0) >= 0 || s.stocks.food >= 0.9 * this.cap("food");
-    const waterUp = s.deltas.water.reduce((a, b) => a + b, 0) >= 0 || s.stocks.water >= 0.9 * this.cap("water");
+    // "Up" means growing, or so full that the lines idle (they stop at 90 % of the cap, so
+    // the stock oscillates just under it).
+    const foodUp = s.deltas.food.reduce((a, b) => a + b, 0) >= 0 || s.stocks.food >= 0.8 * this.cap("food");
+    const waterUp = s.deltas.water.reduce((a, b) => a + b, 0) >= 0 || s.stocks.water >= 0.8 * this.cap("water");
     s.story.surplusSols = !hungry && !thirsty && foodUp && waterUp ? s.story.surplusSols + 1 : 0;
     if (s.story.path) {
       const p = D.paths[s.story.path];
