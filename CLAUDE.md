@@ -32,3 +32,9 @@ Env override for the game's world feed: `OUTPOST_ZERO_WS`. Compose root override
 - The base stays organised in departments (Command, Research, Engineering, Knowledge, Commons) on the
   3x3 district grid. Every unit is a real Hermes agent; custom characters get web_search or reasoning only.
 - Hermes never creates approvals; the adapter owns the Human Approval checkpoint.
+
+## Design docs
+
+- `docs/story.md`: the storyline (Odyssey-7, MOTHER, the ruins, four endings).
+- `docs/economy.md`: the economy system; numbers in `design/economy.json`; balance check
+  `node tools/economy_sim.mjs 80` (fails on starvation, thirst or life-support brownout).
