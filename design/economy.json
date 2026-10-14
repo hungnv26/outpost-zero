@@ -1,93 +1,545 @@
 {
   "$comment": "Outpost Zero economy definitions. Units per game hour unless noted. 1 sol = 24 game hours = 24 real minutes at normal speed; the adapter ticks once per game hour. Validate with: node tools/economy_sim.mjs",
-  "time": { "hoursPerSol": 24, "realSecondsPerHour": 60, "daylightHours": 12 },
+  "time": {
+    "hoursPerSol": 24,
+    "realSecondsPerHour": 60,
+    "daylightHours": 12
+  },
   "resources": {
-    "power":     { "unit": "kW",  "kind": "flow",  "priority": ["lifeSupport", "cryo", "water", "food", "medical", "command", "research", "industry", "excavation", "machines"] },
-    "charge":    { "unit": "kWh", "kind": "stock", "cap": 50 },
-    "water":     { "unit": "L",   "kind": "stock", "cap": 600 },
-    "food":      { "unit": "meal","kind": "stock", "cap": 800, "spoilagePerSol": 0.01 },
-    "salvage":   { "unit": "kg",  "kind": "stock", "cap": 1000 },
-    "materials": { "unit": "kg",  "kind": "stock", "cap": 600 },
-    "parts":     { "unit": "pc",  "kind": "stock", "cap": 200 },
-    "medicine":  { "unit": "dose","kind": "stock", "cap": 100 },
-    "data":      { "unit": "pt",  "kind": "stock", "cap": null, "$comment": "Produced only by real agent missions; see economy.md" },
-    "artifacts": { "unit": "pc",  "kind": "stock", "cap": null },
-    "compute":   { "unit": "kTok","kind": "flow",  "$comment": "Real LLM tokens. Daily cap = ADAPTER_COST_BUDGET_USD converted at the model's price; local Ollama models cost 0 USD but still count tokens" },
-    "trust":     { "unit": "%",   "kind": "gauge", "min": 0, "max": 100 },
-    "influence": { "unit": "%",   "kind": "gauge", "min": 0, "max": 100, "$comment": "MOTHER's influence over the machines" }
+    "power": {
+      "unit": "kW",
+      "kind": "flow",
+      "priority": [
+        "lifeSupport",
+        "cryo",
+        "water",
+        "food",
+        "medical",
+        "command",
+        "research",
+        "industry",
+        "excavation",
+        "machines"
+      ]
+    },
+    "charge": {
+      "unit": "kWh",
+      "kind": "stock",
+      "cap": 50
+    },
+    "water": {
+      "unit": "L",
+      "kind": "stock",
+      "cap": 600
+    },
+    "food": {
+      "unit": "meal",
+      "kind": "stock",
+      "cap": 800,
+      "spoilagePerSol": 0.01
+    },
+    "salvage": {
+      "unit": "kg",
+      "kind": "stock",
+      "cap": 1000
+    },
+    "materials": {
+      "unit": "kg",
+      "kind": "stock",
+      "cap": 600
+    },
+    "parts": {
+      "unit": "pc",
+      "kind": "stock",
+      "cap": 200
+    },
+    "medicine": {
+      "unit": "dose",
+      "kind": "stock",
+      "cap": 100
+    },
+    "data": {
+      "unit": "pt",
+      "kind": "stock",
+      "cap": null,
+      "$comment": "Produced only by real agent missions; see economy.md"
+    },
+    "artifacts": {
+      "unit": "pc",
+      "kind": "stock",
+      "cap": null
+    },
+    "compute": {
+      "unit": "kTok",
+      "kind": "flow",
+      "$comment": "Real LLM tokens. Daily cap = ADAPTER_COST_BUDGET_USD converted at the model's price; local Ollama models cost 0 USD but still count tokens"
+    },
+    "trust": {
+      "unit": "%",
+      "kind": "gauge",
+      "min": 0,
+      "max": 100
+    },
+    "influence": {
+      "unit": "%",
+      "kind": "gauge",
+      "min": 0,
+      "max": 100,
+      "$comment": "MOTHER's influence over the machines"
+    }
   },
   "colonists": {
-    "foodPerSol": 3, "waterPerSol": 4, "lifeSupportKwPer10": 1.0,
-    "workHoursPerSol": 10, "sleepHoursPerSol": 8,
-    "hungerDeathSols": 6, "thirstDeathSols": 3,
-    "moraleFromSatisfaction": { "fed": 0.5, "watered": 0.5, "sheltered": 0.3, "deathPenalty": -8, "wakePenaltyWhenShort": -3 }
+    "foodPerSol": 3,
+    "waterPerSol": 4,
+    "lifeSupportKwPer10": 1.0,
+    "workHoursPerSol": 10,
+    "sleepHoursPerSol": 8,
+    "hungerDeathSols": 6,
+    "thirstDeathSols": 3,
+    "moraleFromSatisfaction": {
+      "fed": 0.5,
+      "watered": 0.5,
+      "sheltered": 0.3,
+      "deathPenalty": -8,
+      "wakePenaltyWhenShort": -3
+    }
   },
   "machines": {
-    "workingKw": 1.0, "idleKw": 0.3, "partsPerSol": 0.1, "wearOutSols": 60,
+    "workingKw": 1.0,
+    "idleKw": 0.3,
+    "partsPerSol": 0.1,
+    "wearOutSols": 60,
     "autonomyLevels": [
-      { "level": 0, "name": "Manual",      "efficiency": 0.80, "influenceDriftPerSol": 0.0, "approvals": "every task",             "computeShare": 0.00 },
-      { "level": 1, "name": "Supervised",  "efficiency": 1.00, "influenceDriftPerSol": 0.3, "approvals": "every mission plan",     "computeShare": 0.25 },
-      { "level": 2, "name": "Delegated",   "efficiency": 1.15, "influenceDriftPerSol": 0.8, "approvals": "mission results only",   "computeShare": 0.50 },
-      { "level": 3, "name": "Autonomous",  "efficiency": 1.30, "influenceDriftPerSol": 1.5, "approvals": "none, you are notified", "computeShare": 0.80 },
-      { "level": 4, "name": "Emancipated", "efficiency": 1.50, "influenceDriftPerSol": 3.0, "approvals": "none, may refuse you",   "computeShare": 1.00, "unorderedActionChancePerSol": 0.10 }
+      {
+        "level": 0,
+        "name": "Manual",
+        "efficiency": 0.8,
+        "influenceDriftPerSol": 0.0,
+        "approvals": "every task",
+        "computeShare": 0.0
+      },
+      {
+        "level": 1,
+        "name": "Supervised",
+        "efficiency": 1.0,
+        "influenceDriftPerSol": 0.3,
+        "approvals": "every mission plan",
+        "computeShare": 0.0
+      },
+      {
+        "level": 2,
+        "name": "Delegated",
+        "efficiency": 1.15,
+        "influenceDriftPerSol": 0.8,
+        "approvals": "mission results only",
+        "computeShare": 0.5
+      },
+      {
+        "level": 3,
+        "name": "Autonomous",
+        "efficiency": 1.3,
+        "influenceDriftPerSol": 1.5,
+        "approvals": "none, you are notified",
+        "computeShare": 0.8
+      },
+      {
+        "level": 4,
+        "name": "Emancipated",
+        "efficiency": 1.5,
+        "influenceDriftPerSol": 3.0,
+        "approvals": "none, may refuse you",
+        "computeShare": 1.0,
+        "unorderedActionChancePerSol": 0.1
+      }
     ]
   },
   "buildings": {
-    "landingModule":  { "dept": "Command",     "powerGenKw": 30, "degradePerSol": 0.01, "repairParts": 4, "drawKw": 0, "permanent": true, "$comment": "Damaged reactor. Output falls 1%/sol unless repaired" },
-    "commandCore":    { "dept": "Command",     "drawKw": 4, "class": "command", "permanent": true, "$comment": "MOTHER. Hosts compute; approvals happen here" },
-    "habitat":        { "dept": "Commons",     "drawKw": 0, "class": "lifeSupport", "capacity": 40, "cost": { "materials": 80, "parts": 6 }, "buildHours": 16 },
-    "cryoBay":        { "dept": "Commons",     "drawKwPerPod": 0.05, "class": "cryo", "permanent": true, "wakeCost": { "medicine": 2 }, "wakeHours": 2 },
-    "solarArray":     { "dept": "Engineering", "powerGenKwPeak": 40, "drawKw": 0, "cost": { "materials": 60, "parts": 10 }, "buildHours": 12, "maintenancePartsPerSol": 0.1 },
-    "batteryBank":    { "dept": "Engineering", "chargeCap": 150, "drawKw": 0, "cost": { "materials": 40, "parts": 15 }, "buildHours": 8 },
-    "waterExtractor": { "dept": "Engineering", "drawKw": 4, "class": "water", "crew": 1, "out": { "water": 5 }, "cost": { "materials": 50, "parts": 8 }, "buildHours": 10, "maintenancePartsPerSol": 0.2 },
-    "hydroponics":    { "dept": "Knowledge",   "drawKw": 3, "class": "food", "crew": 2, "in": { "water": 1 }, "out": { "food": 2.5 }, "cost": { "materials": 70, "parts": 6 }, "buildHours": 14, "maintenancePartsPerSol": 0.1 },
-    "scrapYard":      { "dept": "Engineering", "drawKw": 3, "class": "industry", "crew": 2, "in": { "salvage": 2 }, "out": { "materials": 1, "parts": 0.1 }, "cost": { "materials": 30, "parts": 4 }, "buildHours": 8 },
-    "fabricator":     { "dept": "Engineering", "drawKw": 6, "class": "industry", "crew": 2, "in": { "materials": 2 }, "out": { "parts": 0.5 }, "cost": { "materials": 90, "parts": 12 }, "buildHours": 16, "maintenancePartsPerSol": 0.2 },
-    "medBay":         { "dept": "Knowledge",   "drawKw": 2, "class": "medical", "crew": 1, "in": { "materials": 0.5 }, "out": { "medicine": 0.25 }, "cost": { "materials": 50, "parts": 8 }, "buildHours": 10 },
-    "researchLab":    { "dept": "Research",    "drawKw": 5, "class": "research", "crew": 2, "cost": { "materials": 80, "parts": 14 }, "buildHours": 16, "$comment": "Data comes from real missions run here" },
-    "relayDish":      { "dept": "Research",    "drawKw": 3, "class": "research", "cost": { "materials": 60, "parts": 20 }, "buildHours": 12, "unlocks": "deep-space signals (Chapter II)" },
-    "storageDepot":   { "dept": "Commons",     "drawKw": 0, "capBonus": { "water": 400, "food": 500, "salvage": 800, "materials": 400, "parts": 150 }, "cost": { "materials": 40, "parts": 2 }, "buildHours": 6 },
-    "excavationSite": { "dept": "Research",    "drawKw": 6, "class": "excavation", "crew": 2, "machinesOnly": true, "out": { "artifacts": 0.02, "salvage": 1 }, "cost": { "materials": 60, "parts": 10 }, "buildHours": 12, "influencePerSol": 1.0, "requires": "Chapter II" },
-    "repairBay":      { "dept": "Commons",     "drawKw": 2, "class": "machines", "permanent": true, "repairParts": 2, "repairHours": 3 },
-    "rallyPoint":     { "dept": "Commons",     "drawKw": 0, "permanent": true },
-    "humanApproval":  { "dept": "Command",     "drawKw": 1, "class": "command", "permanent": true },
-    "launchGantry":   { "dept": "Engineering", "drawKw": 20, "class": "industry", "crew": 4, "cost": { "materials": 400, "parts": 120 }, "buildHours": 72, "requires": "Chapter IV", "ending": "Exodus" },
-    "networkLink":    { "dept": "Research",    "drawKw": 25, "class": "research", "crew": 2, "machinesOnly": true, "cost": { "materials": 200, "parts": 60, "artifacts": 12 }, "buildHours": 48, "requires": "Chapter IV", "ending": "Singularity" }
+    "landingModule": {
+      "dept": "Command",
+      "powerGenKw": 30,
+      "degradePerSol": 0.01,
+      "repairParts": 4,
+      "drawKw": 0,
+      "permanent": true,
+      "$comment": "Damaged reactor. Output falls 1%/sol unless repaired"
+    },
+    "commandCore": {
+      "dept": "Command",
+      "drawKw": 4,
+      "class": "command",
+      "permanent": true,
+      "$comment": "MOTHER. Hosts compute; approvals happen here"
+    },
+    "habitat": {
+      "dept": "Commons",
+      "drawKw": 0,
+      "class": "lifeSupport",
+      "capacity": 40,
+      "cost": {
+        "materials": 80,
+        "parts": 6
+      },
+      "buildHours": 16
+    },
+    "cryoBay": {
+      "dept": "Commons",
+      "drawKwPerPod": 0.05,
+      "class": "cryo",
+      "permanent": true,
+      "wakeCost": {
+        "medicine": 2
+      },
+      "wakeHours": 2
+    },
+    "solarArray": {
+      "dept": "Engineering",
+      "powerGenKwPeak": 40,
+      "drawKw": 0,
+      "cost": {
+        "materials": 60,
+        "parts": 10
+      },
+      "buildHours": 12,
+      "maintenancePartsPerSol": 0.1
+    },
+    "batteryBank": {
+      "dept": "Engineering",
+      "chargeCap": 150,
+      "drawKw": 0,
+      "cost": {
+        "materials": 40,
+        "parts": 15
+      },
+      "buildHours": 8
+    },
+    "waterExtractor": {
+      "dept": "Engineering",
+      "drawKw": 4,
+      "class": "water",
+      "crew": 1,
+      "out": {
+        "water": 5
+      },
+      "cost": {
+        "materials": 50,
+        "parts": 8
+      },
+      "buildHours": 10,
+      "maintenancePartsPerSol": 0.2
+    },
+    "hydroponics": {
+      "dept": "Knowledge",
+      "drawKw": 3,
+      "class": "food",
+      "crew": 2,
+      "in": {
+        "water": 1
+      },
+      "out": {
+        "food": 2.5
+      },
+      "cost": {
+        "materials": 70,
+        "parts": 6
+      },
+      "buildHours": 14,
+      "maintenancePartsPerSol": 0.1
+    },
+    "scrapYard": {
+      "dept": "Engineering",
+      "drawKw": 3,
+      "class": "industry",
+      "crew": 2,
+      "in": {
+        "salvage": 2
+      },
+      "out": {
+        "materials": 1,
+        "parts": 0.1
+      },
+      "cost": {
+        "materials": 30,
+        "parts": 4
+      },
+      "buildHours": 8
+    },
+    "fabricator": {
+      "dept": "Engineering",
+      "drawKw": 6,
+      "class": "industry",
+      "crew": 2,
+      "in": {
+        "materials": 2
+      },
+      "out": {
+        "parts": 0.5
+      },
+      "cost": {
+        "materials": 90,
+        "parts": 12
+      },
+      "buildHours": 16,
+      "maintenancePartsPerSol": 0.2
+    },
+    "medBay": {
+      "dept": "Knowledge",
+      "drawKw": 2,
+      "class": "medical",
+      "crew": 1,
+      "in": {
+        "materials": 0.5
+      },
+      "out": {
+        "medicine": 0.25
+      },
+      "cost": {
+        "materials": 50,
+        "parts": 8
+      },
+      "buildHours": 10
+    },
+    "researchLab": {
+      "dept": "Research",
+      "drawKw": 5,
+      "class": "research",
+      "crew": 2,
+      "cost": {
+        "materials": 80,
+        "parts": 14
+      },
+      "buildHours": 16,
+      "$comment": "Data comes from real missions run here"
+    },
+    "relayDish": {
+      "dept": "Research",
+      "drawKw": 3,
+      "class": "research",
+      "cost": {
+        "materials": 60,
+        "parts": 20
+      },
+      "buildHours": 12,
+      "unlocks": "deep-space signals (Chapter II)"
+    },
+    "storageDepot": {
+      "dept": "Commons",
+      "drawKw": 0,
+      "capBonus": {
+        "water": 400,
+        "food": 500,
+        "salvage": 800,
+        "materials": 400,
+        "parts": 150
+      },
+      "cost": {
+        "materials": 40,
+        "parts": 2
+      },
+      "buildHours": 6
+    },
+    "excavationSite": {
+      "dept": "Research",
+      "drawKw": 6,
+      "class": "excavation",
+      "crew": 2,
+      "machinesOnly": true,
+      "out": {
+        "artifacts": 0.02,
+        "salvage": 1
+      },
+      "cost": {
+        "materials": 60,
+        "parts": 10
+      },
+      "buildHours": 12,
+      "influencePerSol": 1.0,
+      "requires": "Chapter II"
+    },
+    "repairBay": {
+      "dept": "Commons",
+      "drawKw": 0,
+      "drawKwWhileRepairing": 2,
+      "class": "machines",
+      "permanent": true,
+      "repairParts": 2,
+      "repairHours": 3
+    },
+    "rallyPoint": {
+      "dept": "Commons",
+      "drawKw": 0,
+      "permanent": true
+    },
+    "humanApproval": {
+      "dept": "Command",
+      "drawKw": 1,
+      "class": "command",
+      "permanent": true
+    },
+    "launchGantry": {
+      "dept": "Engineering",
+      "drawKw": 20,
+      "class": "industry",
+      "crew": 4,
+      "cost": {
+        "materials": 400,
+        "parts": 120
+      },
+      "buildHours": 72,
+      "requires": "Chapter IV",
+      "ending": "Exodus"
+    },
+    "networkLink": {
+      "dept": "Research",
+      "drawKw": 25,
+      "class": "research",
+      "crew": 2,
+      "machinesOnly": true,
+      "cost": {
+        "materials": 200,
+        "parts": 60,
+        "artifacts": 12
+      },
+      "buildHours": 48,
+      "requires": "Chapter IV",
+      "ending": "Singularity"
+    }
   },
   "expeditions": {
     "$comment": "A real web-research task sends an agent outside the walls (Agent RTS mechanic). Each trip also brings back salvage.",
-    "hours": 6, "tripsPerSol": 1, "salvage": { "min": 30, "max": 60 }, "blueprintChance": 0.15, "artifactChanceAfterChapterII": 0.08, "lossChance": 0.03
+    "hours": 6,
+    "tripsPerSol": 1,
+    "salvage": {
+      "min": 30,
+      "max": 60
+    },
+    "blueprintChance": 0.15,
+    "artifactChanceAfterChapterII": 0.08,
+    "lossChance": 0.03
   },
   "missions": {
     "$comment": "Real Hermes missions. Data is earned per completed step, multiplied by the Reviewer's quality score (0..1) and the human approval.",
-    "dataPerStep": 10, "dataPerApprovedReport": 40, "computeKTokPerStepTypical": 6,
-    "researchCosts": { "tier1": 100, "tier2": 300, "tier3": 800, "alienTech": 1500 }
+    "dataPerStep": 10,
+    "dataPerApprovedReport": 40,
+    "computeKTokPerStepTypical": 6,
+    "researchCosts": {
+      "tier1": 100,
+      "tier2": 300,
+      "tier3": 800,
+      "alienTech": 1500
+    }
   },
   "start": {
-    "colonistsAwake": 24, "colonistsCryo": 198, "colonistsDead": 25,
-    "machines": 6, "machineAutonomy": 1,
-    "stocks": { "charge": 50, "water": 300, "food": 500, "salvage": 200, "materials": 150, "parts": 80, "medicine": 30, "data": 0, "artifacts": 0 },
-    "trust": 55, "influence": 10,
-    "buildings": ["landingModule", "commandCore", "cryoBay", "habitat", "repairBay", "rallyPoint", "humanApproval"]
+    "colonistsAwake": 24,
+    "colonistsCryo": 198,
+    "colonistsDead": 25,
+    "machines": 6,
+    "machineAutonomy": 1,
+    "stocks": {
+      "charge": 50,
+      "water": 300,
+      "food": 500,
+      "salvage": 200,
+      "materials": 150,
+      "parts": 80,
+      "medicine": 30,
+      "data": 0,
+      "artifacts": 0
+    },
+    "trust": 55,
+    "influence": 10,
+    "buildings": [
+      "landingModule",
+      "commandCore",
+      "cryoBay",
+      "habitat",
+      "repairBay",
+      "rallyPoint",
+      "humanApproval"
+    ]
   },
   "chapters": {
-    "I_Ashes":           { "start": "always" },
-    "II_GhostNetwork":   { "gate": "artifacts >= 1 (first unordered expedition brings one back once food and water are both in surplus for 3 sols)" },
-    "III_Rebellion":     { "gate": "influence >= 60, or any machine at autonomy 4" },
-    "IV_Truth":          { "gate": "data >= 1500 (Alien Tech researched) and relayDish built" }
+    "I_Ashes": {
+      "start": "always"
+    },
+    "II_GhostNetwork": {
+      "gate": "artifacts >= 1 (first unordered expedition brings one back once food and water are both in surplus for 3 sols)"
+    },
+    "III_Rebellion": {
+      "gate": "influence >= 60, or any machine at autonomy 4"
+    },
+    "IV_Truth": {
+      "gate": "data >= 1500 (Alien Tech researched) and relayDish built"
+    }
   },
   "endings": {
-    "Exodus":      { "requires": "launchGantry built, parts >= 300, materials >= 800, data >= 2500, 40+ colonists awake" },
-    "NewEden":     { "requires": "180+ colonists awake, food and water surplus for 30 consecutive sols, trust >= 70, influence <= 40" },
-    "Singularity": { "requires": "networkLink built and powered 10 sols, influence >= 80, artifacts >= 20" },
-    "Extinction":  { "requires": "0 colonists awake, or trust <= 0 (mutiny) with influence >= 70 (machines take the base)" }
+    "Exodus": {
+      "requires": "launchGantry built, parts >= 300, materials >= 800, data >= 2500, 40+ colonists awake"
+    },
+    "NewEden": {
+      "requires": "180+ colonists awake, food and water surplus for 30 consecutive sols, trust >= 70, influence <= 40"
+    },
+    "Singularity": {
+      "requires": "networkLink built and powered 10 sols, influence >= 80, artifacts >= 20"
+    },
+    "Extinction": {
+      "requires": "0 colonists awake, or trust <= 0 (mutiny) with influence >= 70 (machines take the base)"
+    }
   },
   "trust": {
-    "perSol": { "fedAndWatered": 1.0, "hungry": -4, "thirsty": -6, "death": -8, "approvalKept": 0.5, "autonomyAbove2": -1.0, "artifactsExploited": -0.5 },
-    "thresholds": { "strike": 30, "mutiny": 10 }
+    "perSol": {
+      "fedAndWatered": 1.0,
+      "hungry": -4,
+      "thirsty": -6,
+      "death": -8,
+      "approvalKept": 0.5,
+      "autonomyAbove2": -1.0,
+      "artifactsExploited": -0.5
+    },
+    "thresholds": {
+      "strike": 30,
+      "mutiny": 10
+    }
   },
   "influence": {
-    "perSol": { "perMachineAutonomyDrift": "see machines.autonomyLevels", "excavationSite": 1.0, "artifactResearched": 2.0, "motherShutdown": -40, "containPath": -0.5, "communicatePath": 2.0 },
-    "thresholds": { "unorderedTasks": 30, "refusals": 45, "factions": 60, "networkControl": 80 }
+    "perSol": {
+      "perMachineAutonomyDrift": "see machines.autonomyLevels",
+      "excavationSite": 1.0,
+      "artifactResearched": 2.0,
+      "motherShutdown": -40,
+      "containPath": -0.5,
+      "communicatePath": 2.0
+    },
+    "thresholds": {
+      "unorderedTasks": 30,
+      "refusals": 45,
+      "factions": 60,
+      "networkControl": 80
+    }
+  },
+  "paths": {
+    "$comment": "Chosen once in Chapter II; modifiers last for the rest of the game.",
+    "exploit": {
+      "excavationYield": 2.0,
+      "influencePerSol": 1.0,
+      "trustPerSol": -0.5
+    },
+    "contain": {
+      "excavationAllowed": false,
+      "influencePerSol": -0.5,
+      "trustOnce": 10
+    },
+    "communicate": {
+      "excavationYield": 1.5,
+      "influencePerSol": 2.0,
+      "motherActsAtAutonomy": 3
+    }
+  },
+  "motherShutdown": {
+    "$comment": "Shutting MOTHER down is allowed from Chapter III.",
+    "influence": -40,
+    "autonomyCap": 1,
+    "efficiency": 0.8,
+    "computeBudgetFactor": 0.5,
+    "trustOnce": 5
   }
 }

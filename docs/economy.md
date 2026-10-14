@@ -59,7 +59,7 @@ opening hour by hour and fails if the colony starves, dies of thirst or loses li
 **Colonists.** 247 left Earth; 25 died in the crash, 24 are awake, 198 sleep in cryo pods that
 each draw 0.05 kW. A colonist eats 3 meals and drinks 4 L a sol, works 10 hours and sleeps 8,
 and needs a Habitat bed (40 per Habitat). Waking a colonist costs 2 doses of medicine and two
-hours; it is the only way to grow the labour force, and every new mouth needs 3 meals and 4 L a
+hours, and needs an awake colonist at the Cryo Bay to do it; it is the only way to grow the labour force, and every new mouth needs 3 meals and 4 L a
 sol forever. Six sols without food or three without water kills. Each death costs 8 trust.
 
 **Machines.** The six surviving robots are the game's real agents (see §8 for the roles). A
@@ -83,9 +83,10 @@ life support > cryo pods > water > food > medical > command > research > industr
 ```
 
 Fixed draw at the start: life support 3 kW (1 kW per 10 awake), cryo 9.9 kW, MOTHER's core 4 kW,
-Human Approval 1 kW, Repair Bay 2 kW. That leaves about 10 kW for everything that grows the
-colony, which is why the Solar Array (40 kW in daylight) is the second thing to build and the
-Battery Bank the first thing you miss at night. Waking colonists trades cryo draw for food and
+Human Approval 1 kW; the Repair Bay draws 2 kW only while it repairs. That leaves about 12 kW for
+everything that grows the colony, which is why the Solar Array (40 kW in daylight) is the second thing to build and the
+Battery Bank the first thing you miss at night. Machines are last in the
+order, so on a short night the robots park at home and the humans crew the lines alone. Waking colonists trades cryo draw for food and
 water; it is the slow conversion at the heart of Chapter I.
 
 ## 6. Autonomy: the second scarcity
@@ -96,7 +97,7 @@ consequences are economic.
 | Level | Name | Efficiency | What you approve | Compute they may spend unasked | Influence drift per sol |
 |---|---|---|---|---|---|
 | 0 | Manual | 0.80 | every task | none | 0 |
-| 1 | Supervised | 1.00 | every mission plan (the Agent RTS flow today) | 25 % of the sol budget | +0.3 |
+| 1 | Supervised | 1.00 | every mission plan (the Agent RTS flow today) | none; you press Deploy | +0.3 |
 | 2 | Delegated | 1.15 | only results | 50 % | +0.8 |
 | 3 | Autonomous | 1.30 | nothing; you are notified | 80 % | +1.5 |
 | 4 | Emancipated | 1.50 | nothing; they may refuse you | 100 % | +3.0, and a 10 % chance a sol of an unordered action |
@@ -109,9 +110,14 @@ any department sits above level 2, because the colonists see what you are handin
 
 **Compute is the budget you already have.** The adapter already counts tokens and cost against
 `ADAPTER_COST_BUDGET_USD` and shows them in the top bar. The economy turns that into MOTHER's
-daily compute: Supervised machines wait for your Deploy before spending it; Autonomous machines
+daily compute: Manual and Supervised machines spend it only on missions you deploy; Delegated
+machines may use half of it on tasks they pick themselves; Autonomous machines
 start missions themselves, and when the pool is empty everyone, including you, waits for the next
 sol. A hosted model makes compute cost money; the local model makes it cost only time.
+
+**Shutting MOTHER down** is allowed from Chapter III. Influence drops by 40 and trust rises by 5
+once, but the colony loses its orchestrator: autonomy is capped at Supervised, machine efficiency
+falls to 0.8, and the compute budget halves because the Foreman now plans with a smaller model.
 
 ## 7. Buildings
 
@@ -124,7 +130,7 @@ Costs are materials / parts; build time is in machine-hours with two machines bu
 | Human Approval | Command | 1 kW | | the checkpoint | permanent | |
 | Cryo Bay | Commons | 0.05 kW per pod | | wake: 2 medicine, 2 h | permanent | |
 | Habitat | Commons | 0 | | 40 beds | 80 / 6 | 16 h |
-| Repair Bay | Commons | 2 kW | | repairs: 2 parts, 3 h | permanent | |
+| Repair Bay | Commons | 2 kW while repairing | | repairs: 2 parts, 3 h | permanent | |
 | Rally Point | Commons | 0 | | waiting | permanent | |
 | Storage Depot | Commons | 0 | | caps +400 water, +500 food, +800 salvage, +400 materials, +150 parts | 40 / 2 | 6 h |
 | Solar Array | Engineering | gen 40 kW daylight | | 0.1 parts/sol upkeep | 60 / 10 | 12 h |
@@ -155,7 +161,7 @@ Zero keeps that and gives every real action an economic result:
 | Researcher | Surveyor | web research | every trip is an **expedition**: 6 h out, 30 to 60 salvage back, 15 % blueprint, 3 % loss, and after Chapter II 8 % artifact |
 | Scout | Scout drone | news scan | short expeditions: half the salvage, no loss |
 | Analyst | Analyst | reasoning | data from each step |
-| Coder | Fabricator unit | code sandbox | data; its home is the Fabricator and it adds 0.1 part/h while idle there |
+| Coder | Fabricator unit | code sandbox | data; its home is the Fabricator, where it counts as one of the two crew while idle |
 | Writer | Archivist | drafts reports | data; writes the colony log |
 | Reviewer | Warden | checks results | its quality score (0 to 1) multiplies the data of the whole mission; waits at Human Approval |
 
@@ -166,8 +172,7 @@ by the player in the Missions panel, but Research Lab missions are the only sour
 
 ## 9. Trust and the colonists
 
-Trust moves once a sol: +1 when everyone was fed and watered, +0.5 per approval you kept (rather
-than let lapse), −4 per hungry sol, −6 per thirsty sol, −8 per death, −1 while any department is
+Trust moves once a sol: +1 when everyone was fed and watered, +0.5 per approval you decided within the sol it was asked, −4 per hungry sol, −6 per thirsty sol, −8 per death, −1 while any department is
 above autonomy 2, −0.5 per sol of exploiting the ruins. Below 30 the colonists strike and human
 labour halves; below 10 they mutiny, and if influence is 70 or more at that moment the machines
 take the base (Extinction).
@@ -183,15 +188,16 @@ take the base (Extinction).
 
 Chapter II's choice sets modifiers for the rest of the game: **Exploit** doubles excavation yield
 and adds +1 influence and −0.5 trust a sol; **Contain** removes excavation, gives −0.5 influence
-a sol and +10 trust once; **Communicate** gives +2 influence a sol, halves the compute cost of
-every mission, and lets MOTHER start missions on its own.
+a sol and +10 trust once; **Communicate** gives +2 influence a sol, raises excavation yield by half, and
+lets MOTHER start missions on its own as if every department were Autonomous. Real tokens cannot
+be discounted, so no path changes the price of compute.
 
 | Ending | Requires |
 |---|---|
 | A: Exodus | Launch Gantry, 300 parts, 800 materials, 2500 data, 40 or more colonists awake |
 | B: New Eden | 180 or more awake, food and water surplus for 30 straight sols, trust 70 or more, influence 40 or less |
 | C: Singularity | Network Link powered for 10 sols, influence 80 or more, 20 artifacts |
-| D: Extinction | nobody awake, or a mutiny while influence is 70 or more |
+| D: Extinction | nobody awake (the pods cannot open themselves), or a mutiny while influence is 70 or more |
 
 ## 11. Events
 
@@ -202,7 +208,7 @@ Unscripted stories come from the same numbers. Each is a world event the adapter
 | Dust storm | 4 % a sol, lasts 1 to 2 sols | solar output ×0.3; expeditions out in it have the loss chance ×3 |
 | Reactor fault | reactor below 80 % | reactor output ×0.5 until repaired; a fire if ignored 2 sols |
 | Illness | 2 % per colonist per sol when water is short | the colonist stops working; 1 medicine a sol or 10 % death |
-| Unordered task | influence above 30, 5 % per machine per sol | a machine picks its own task; you can recall it (−0.5 influence) or let it finish (+1) |
+| Unordered task | influence above 30, 5 % per machine per sol (Emancipated machines add their own 10 %) | a machine picks its own task; you can recall it (−0.5 influence) or let it finish (+1) |
 | Refusal | influence above 45 | a machine declines an order; a Supervised approval re-issues it |
 | Recruitment | influence above 60 | an Emancipated machine re-tasks another; both leave their jobs for a sol |
 | Lost expedition | 3 % per trip | the machine is gone until found by another expedition (one sol) |
@@ -257,7 +263,7 @@ State persists next to the base in `.data/colony.json`.
 With the default plan (Water Extractor, Solar Array, Scrap Yard, two Hydroponics Bays, a second
 Water Extractor, Battery Bank, Fabricator) the colony of 24 survives on ship rations until the
 first bay comes up on sol 4, wakes its first 8 colonists on sol 10 and reaches 40 awake by sol
-40 with trust at 100 and influence at 34. Materials are the pacing resource: one Scrap Yard
+35; at sol 80 trust is 100 and influence 34. Materials are the pacing resource: one Scrap Yard
 makes 24 kg a sol and every building wants 30 to 90, so growth is decided by how many yards
 and expeditions the player runs, and by the night, when the reactor alone cannot carry industry.
 Numbers to revisit in playtests: the cryo draw (9.9 kW is the whole early game), hydroponics
