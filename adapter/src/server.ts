@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { type Base, isLayoutCommand } from "./base.ts";
 import type { ClientCommand, ServerMessage } from "./contract.ts";
 import { LayoutError } from "./layout.ts";
+import { ColonyError, type ColonyRunner } from "./economy.ts";
 import type { Source } from "./source.ts";
 import type { World } from "./world.ts";
 
@@ -50,19 +51,50 @@ export function parseCommand(raw: string): ClientCommand | null {
       return { type: "layout.organise" };
     case "layout.terrain":
       return typeof c.terrain === "string" ? { type: "layout.terrain", terrain: c.terrain } : null;
+    case "colony.set_speed":
+      return typeof c.speed === "number" ? { type: "colony.set_speed", speed: c.speed } : null;
+    case "colony.build":
+      return typeof c.building === "string" ? { type: "colony.build", building: c.building } : null;
+    case "colony.cancel_build":
+      return { type: "colony.cancel_build" };
+    case "colony.toggle":
+      return typeof c.id === "string" && typeof c.enabled === "boolean" ? { type: "colony.toggle", id: c.id, enabled: c.enabled } : null;
+    case "colony.wake":
+      return typeof c.count === "number" ? { type: "colony.wake", count: c.count } : null;
+    case "colony.repair":
+      return typeof c.target === "string" ? { type: "colony.repair", target: c.target } : null;
     default:
       return null;
   }
 }
 
 // HTTP (health, state, commands for scripts) + WebSocket (/world) for game clients.
-export function startServer(world: World, source: Source, port: number, host = "127.0.0.1", base: Base | null = null): Promise<Server> {
+export function startServer(world: World, source: Source, port: number, host = "127.0.0.1", base: Base | null = null, colony: ColonyRunner | null = null): Promise<Server> {
   const clients = new Set<WebSocket>();
 
   const handle = async (cmd: ClientCommand): Promise<void> => {
     if (isLayoutCommand(cmd)) {
       if (!base) throw new LayoutError("Build mode is not available.");
       return base.apply(cmd);
+    }
+    if (cmd.type.startsWith("colony.")) {
+      if (!colony) throw new ColonyError("The colony economy is not running.");
+      return colony.command((c) => {
+        switch (cmd.type) {
+          case "colony.set_speed":
+            return c.setSpeed(cmd.speed);
+          case "colony.build":
+            return void c.build(cmd.building);
+          case "colony.cancel_build":
+            return c.cancelBuild();
+          case "colony.toggle":
+            return void c.toggle(cmd.id, cmd.enabled);
+          case "colony.wake":
+            return c.wake(cmd.count);
+          case "colony.repair":
+            return c.repair(cmd.target as "reactor");
+        }
+      });
     }
     switch (cmd.type) {
       case "hello":
@@ -123,7 +155,7 @@ export function startServer(world: World, source: Source, port: number, host = "
         await handle(cmd);
         return json(200, { ok: true });
       } catch (e) {
-        return json(e instanceof LayoutError ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });
+        return json(e instanceof LayoutError || e instanceof ColonyError ? 400 : 500, { error: e instanceof Error ? e.message : String(e) });
       }
     }
     json(404, { error: "not found" });
@@ -146,7 +178,7 @@ export function startServer(world: World, source: Source, port: number, host = "
       }
       handle(cmd).catch((e) => {
         // Build-mode problems go back to the client that asked; anything else is logged.
-        if (e instanceof LayoutError) ws.send(JSON.stringify({ type: "error", seq: world.currentSeq, message: e.message } satisfies ServerMessage));
+        if (e instanceof LayoutError || e instanceof ColonyError) ws.send(JSON.stringify({ type: "error", seq: world.currentSeq, message: e.message } satisfies ServerMessage));
         else world.logLine(`Command ${cmd.type} failed: ${e}`, "error");
       });
     });

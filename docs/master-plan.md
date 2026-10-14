@@ -80,7 +80,14 @@ Set the project up and prove the inherited stack runs under the new name.
 - **Done when:** `scripts/start.sh --fake` plays a mission end to end, and
   `scripts/start.sh` runs one real mission to Human Approval.
 
-### Phase 1: Economy core (3 sessions)
+### Phase 1: Economy core (3 sessions) — DONE 2026-10-14
+
+Evidence: `adapter/src/economy.ts` (Colony, runner, persistence) with 6 tests, the balance
+check playing 80 sols on the real code (`adapter/src/economy-plan.ts`, CLI `tools/economy_sim.mjs`);
+`resource.update.colony` and six `colony.*` commands; the colony strip in the game's top bar
+(`docs/screenshots/colony-strip.jpg`) updating every real minute; a restart resumed at the same
+hour and stocks from `.data/colony.json`; fake-source tests still pass. Build, wake and toggle
+exist as commands only; Phase 2 puts them on the map.
 
 The hourly tick in the adapter, with nothing new to look at yet except numbers.
 

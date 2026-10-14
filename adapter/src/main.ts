@@ -9,6 +9,7 @@ import { Base } from "./base.ts";
 import { loadLayout } from "./layout.ts";
 import { MissionControlSink } from "./sinks/mission-control.ts";
 import { World } from "./world.ts";
+import { Colony, ColonyRunner, loadColonyState, loadDefs } from "./economy.ts";
 
 // Settings come from the environment, falling back to the repo's .env (scripts/gen-env.sh).
 const dotenv = new URL("../../.env", import.meta.url);
@@ -73,12 +74,24 @@ if (env.MC_URL && env.MC_API_KEY && env.MC_SYNC !== "0") {
   await sink.start(world);
 }
 
-await startServer(world, source, port, "127.0.0.1", new Base(world, source, layoutPath));
+// The colony economy (docs/economy.md): numbers from design/economy.json, state next to the base.
+let colony: ColonyRunner | null = null;
+if (env.COLONY !== "0") {
+  const defs = loadDefs(new URL("../../design/economy.json", import.meta.url));
+  const colonyPath = join(dirname(layoutPath), "colony.json");
+  const saved = loadColonyState(colonyPath);
+  colony = new ColonyRunner(new Colony(defs, saved ?? undefined), world, colonyPath, env.COLONY_SECONDS_PER_HOUR ? Number(env.COLONY_SECONDS_PER_HOUR) : undefined);
+  colony.start();
+  if (!saved) world.logLine("Sol 0: Odyssey-7 is down. 24 colonists awake, 198 in cryo. Keep them alive.", "warn");
+}
+
+await startServer(world, source, port, "127.0.0.1", new Base(world, source, layoutPath), colony);
 console.log(`[adapter] source=${sourceName} ws://127.0.0.1:${port}/world mission-control=${sink ? env.MC_URL : "off"}`);
 
 if (env.ADAPTER_VERBOSE === "1") world.on("message", (m) => console.log(JSON.stringify(m)));
 
 const shutdown = async () => {
+  colony?.stop();
   sink?.stop();
   await source.stop();
   process.exit(0);

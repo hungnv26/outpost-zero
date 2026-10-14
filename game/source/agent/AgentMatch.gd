@@ -113,6 +113,7 @@ func _ready():
 	_hud.replay_speed_cycled.connect(func(): _replay.cycle_speed())
 	_hud.replay_stop_requested.connect(_end_replay)
 	_hud.build_command.connect(func(cmd): _client.send_command(cmd))
+	_hud.colony_command.connect(func(cmd): _client.send_command(cmd))
 	_hud.placement_requested.connect(_begin_placement)
 	_replay.caption.connect(func(line): _hud.replay_caption(line))
 	_replay.progressed.connect(

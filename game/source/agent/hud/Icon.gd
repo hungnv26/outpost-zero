@@ -2,7 +2,8 @@ extends Control
 
 # Small vector icons drawn in code (no image assets): department marks and HUD glyphs.
 # kind: research, code, knowledge, meeting, command, approval, rally, repair, bolt, coin,
-# logo, plus, minus, fit, mission, check, focus, home, edit, close, clock, agent.
+# logo, plus, minus, fit, mission, check, focus, home, edit, close, clock, agent,
+# drop, leaf, cube, gear, cross, people, shield, eye (the colony strip).
 
 var kind = "logo":
 	set(v):
@@ -112,6 +113,43 @@ func _draw():
 		"clock":
 			draw_arc(P.call(0.5, 0.5), s * 0.42, 0, TAU, 32, color, w, true)
 			draw_polyline([P.call(0.5, 0.24), P.call(0.5, 0.5), P.call(0.68, 0.6)], color, w, true)
+		"drop":
+			var drop = PackedVector2Array([P.call(0.5, 0.06)])
+			for i in 13:
+				var a = -PI * 0.15 + i * (PI * 1.3) / 12
+				drop.append(P.call(0.5, 0.62) + Vector2(cos(a), sin(a)) * s * 0.3)
+			draw_colored_polygon(drop, color)
+		"leaf":
+			var leaf = PackedVector2Array()
+			for i in 17:
+				var t = i / 16.0
+				leaf.append(P.call(0.12 + 0.8 * t, 0.88 - 0.8 * t) + Vector2(-1, -1) * sin(t * PI) * s * 0.22)
+			for i in 17:
+				var t = 1.0 - i / 16.0
+				leaf.append(P.call(0.12 + 0.8 * t, 0.88 - 0.8 * t) + Vector2(1, 1) * sin(t * PI) * s * 0.22)
+			draw_colored_polygon(leaf, color)
+		"cube":
+			draw_colored_polygon(PackedVector2Array([P.call(0.5, 0.1), P.call(0.88, 0.3), P.call(0.5, 0.5), P.call(0.12, 0.3)]), color)
+			draw_colored_polygon(PackedVector2Array([P.call(0.12, 0.3), P.call(0.5, 0.5), P.call(0.5, 0.92), P.call(0.12, 0.72)]), color.darkened(0.3))
+			draw_colored_polygon(PackedVector2Array([P.call(0.88, 0.3), P.call(0.5, 0.5), P.call(0.5, 0.92), P.call(0.88, 0.72)]), color.darkened(0.15))
+		"gear":
+			draw_arc(P.call(0.5, 0.5), s * 0.26, 0, TAU, 24, color, w * 1.6, true)
+			for i in 8:
+				var a = i * TAU / 8
+				draw_line(P.call(0.5, 0.5) + Vector2(cos(a), sin(a)) * s * 0.3, P.call(0.5, 0.5) + Vector2(cos(a), sin(a)) * s * 0.46, color, w * 1.6, true)
+		"cross":
+			draw_line(P.call(0.5, 0.12), P.call(0.5, 0.88), color, w * 2.4, true)
+			draw_line(P.call(0.12, 0.5), P.call(0.88, 0.5), color, w * 2.4, true)
+		"people":
+			draw_circle(P.call(0.34, 0.3), s * 0.13, color)
+			draw_circle(P.call(0.68, 0.3), s * 0.13, color)
+			draw_colored_polygon(PackedVector2Array([P.call(0.1, 0.9), P.call(0.14, 0.56), P.call(0.54, 0.56), P.call(0.58, 0.9)]), color)
+			draw_colored_polygon(PackedVector2Array([P.call(0.46, 0.9), P.call(0.5, 0.56), P.call(0.86, 0.56), P.call(0.9, 0.9)]), color.darkened(0.2))
+		"shield":
+			draw_colored_polygon(PackedVector2Array([P.call(0.5, 0.08), P.call(0.86, 0.22), P.call(0.8, 0.6), P.call(0.5, 0.92), P.call(0.2, 0.6), P.call(0.14, 0.22)]), color)
+		"eye":
+			draw_polyline([P.call(0.08, 0.5), P.call(0.3, 0.26), P.call(0.7, 0.26), P.call(0.92, 0.5), P.call(0.7, 0.74), P.call(0.3, 0.74), P.call(0.08, 0.5)], color, w, true)
+			draw_circle(P.call(0.5, 0.5), s * 0.15, color)
 
 
 func _round_rect(r: Rect2, c: Color):

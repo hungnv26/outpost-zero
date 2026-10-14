@@ -14,6 +14,7 @@ export type AgentState =
   | "complete"; // finished its part, heading home
 
 import type { BaseLayout } from "./layout.ts";
+import type { ColonyView } from "./economy.ts";
 
 // Buildings are player-defined (see layout.ts); ids are strings like "research_lab".
 export type BuildingId = string;
@@ -81,6 +82,7 @@ export interface Resources {
   tokenBudget: number | null;
   costUsd: number;
   costBudgetUsd: number | null;
+  colony?: ColonyView; // the colony economy (docs/economy.md); absent until the runner starts
 }
 
 export interface LogLine {
@@ -148,4 +150,11 @@ export type ClientCommand =
   | { type: "layout.agent.remove"; id: string }
   | { type: "layout.terrain"; terrain: string }
   | { type: "layout.organise" }
-  | { type: "layout.reset" };
+  | { type: "layout.reset" }
+  // Colony economy (validated in economy.ts)
+  | { type: "colony.set_speed"; speed: number }
+  | { type: "colony.build"; building: string }
+  | { type: "colony.cancel_build" }
+  | { type: "colony.toggle"; id: string; enabled: boolean }
+  | { type: "colony.wake"; count: number }
+  | { type: "colony.repair"; target: string };

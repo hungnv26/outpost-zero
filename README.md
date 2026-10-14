@@ -164,6 +164,7 @@ Everything on screen comes from the live world state.
 | Area | What it shows |
 |---|---|
 | Top bar | Tabs (Mission, Departments, Build, Settings), tokens and cost against the budget, connection, Mission Control link, clock |
+| Colony strip | The economy ([docs/economy.md](docs/economy.md)): sol clock with pause / 1× / 3×, power supply and demand with the battery charge, water, food, materials, parts and medicine with their per-sol trend, colonists awake and in cryo, trust and MOTHER's influence. One game hour passes every real minute; the colony is saved in `.data/colony.json` |
 | Mission tab | New mission box; the running mission with progress; recent finished missions (click one to reopen its report); the task checklist; activity feed |
 | Agents (right) | A card per character with a portrait rendered from its own model, its state, task and progress, grouped by department |
 | Selected agent (bottom centre) | Portrait, department, state, task, progress, job; Focus, Home, Edit |

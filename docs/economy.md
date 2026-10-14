@@ -224,24 +224,33 @@ the adapter did not compute this tick.
 
 ## 13. Adapter contract additions
 
-`resource.update` grows from `{tokens, costUsd, budgetUsd}` to:
+Implemented in Phase 1: `resource.update` keeps `{tokensUsed, tokenBudget, costUsd, costBudgetUsd}`
+and gains `colony`, the economy's view (`ColonyView` in `adapter/src/economy.ts`):
 
 ```ts
-{
-  sol: number, hour: number,
-  power: { supplyKw, demandKw, servedClasses: string[], chargeKwh, chargeCapKwh },
-  stocks: { water, food, salvage, materials, parts, medicine, data, artifacts }, // with caps
-  flows:  { [resource]: perSol },
-  colonists: { awake, cryo, dead, hungrySols, thirstySols },
-  compute: { tokens, costUsd, budgetUsd, spentByAutonomy: number },
-  trust: number, influence: number, chapter: "I"|"II"|"III"|"IV", path?: "exploit"|"contain"|"communicate"
+colony: {
+  sol, hour, speed: 0 | 1 | 3, daylight, realSecondsPerHour,
+  power: { supplyKw, demandKw, chargeKwh, chargeCapKwh, cut: string[] },   // cut = classes not served this hour
+  stocks: { charge, water, food, salvage, materials, parts, medicine, data, artifacts },
+  caps:   { ...same keys where a cap exists },
+  flows:  { ...net change per sol, from the last 24 hours },
+  colonists: { awake, cryo, dead, beds, hungry, thirsty, waking, striking },
+  machines:  { count, autonomy, autonomyName, powered, building },
+  buildings: [{ id, type, label, dept, enabled, powered, producing }],
+  building:  { type, label, hoursLeft, hours } | null,                      // under construction
+  trust, influence, reactor, chapter
 }
 ```
 
-New commands: `autonomy.set {target: deptOrAgentId, level}`, `colonist.wake {count}`,
-`building.toggle {id, enabled}`, `mission.create` gains `kind: "research"|"expedition"|"other"`.
-New events: `economy.event {type, ...}` for §11 and `colony.chapter {chapter, path?}`.
-State persists next to the base in `.data/colony.json`.
+Commands (WebSocket or `POST /command`): `colony.set_speed {speed}`, `colony.build {building}`,
+`colony.cancel_build`, `colony.toggle {id, enabled}`, `colony.wake {count}`,
+`colony.repair {target: "reactor"}`. A refused command answers with the reason
+(`{"error": "Excavation Site needs Chapter II"}`). State persists in `.data/colony.json` after
+every tick and command; delete it to start a new colony. `COLONY=0` disables the economy,
+`COLONY_SECONDS_PER_HOUR` overrides the clock for tests.
+
+Still to come: `autonomy.set`, `economy.event`, `colony.chapter`, and the compute figures
+(Phase 3 and 6).
 
 ## 14. Implementation plan
 

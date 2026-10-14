@@ -1,7 +1,8 @@
 extends Control
 
 # Mission HUD, built in code, game style:
-#   top bar     tabs (Mission, Departments, Build, Settings), tokens, cost, connection, clock
+#   top bar     tabs (Mission, Departments, Build, Settings), tokens, cost, connection, clock;
+#               below it the colony strip: sol clock, speed, power and stocks (economy)
 #   left        Missions (new mission, current + recent), the mission's task checklist,
 #               activity feed; or the Departments key / Build panel, per tab
 #   right       agents with portraits, grouped by department
@@ -22,6 +23,7 @@ signal replay_speed_cycled
 signal replay_stop_requested
 signal setting_changed(key, value)
 signal build_command(cmd)
+signal colony_command(cmd)
 signal placement_requested(kind, payload, label_text)
 
 const Departments = preload("res://source/agent/Departments.gd")
@@ -50,7 +52,9 @@ const MISSION_COLORS = {
 	"planning": Color(0.75, 0.62, 1.0), "running": Ui.ACCENT, "completed": Ui.GOOD,
 	"failed": Ui.BAD, "cancelled": Color(0.55, 0.58, 0.65),
 }
-const TOP_H = 52.0
+const ROW_H = 52.0
+const STRIP_H = 30.0
+const TOP_H = ROW_H + STRIP_H
 const LEFT_W = 350.0
 const RIGHT_W = 316.0
 
@@ -58,6 +62,9 @@ var snapshots: Node  # renders portraits and badges (Snapshots.gd); AgentMatch s
 var model_path_for: Callable  # (model name) -> loadable path, from AgentMatch
 
 var _tokens_label: Label
+var _sol_label: Label
+var _speed_buttons = {}  # speed -> Button
+var _colony = {}  # stat key -> {"value": Label, "trend": Label, "icon": Control}
 var _cost_label: Label
 var _conn_label: Label
 var _clock_label: Label
@@ -406,6 +413,7 @@ func set_resources(r):
 		_cost_label.text = "Cost $%.2f / $%.2f" % [cost, float(cost_budget)]
 	else:
 		_cost_label.text = "Cost $%.2f" % cost
+	set_colony(r.get("colony"))
 
 
 func add_log(line):
@@ -646,13 +654,18 @@ func _build_top_bar():
 	p.custom_minimum_size = Vector2(0, TOP_H)
 	p.mouse_filter = MOUSE_FILTER_STOP
 	add_child(p)
+	var col = VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	p.add_child(col)
 	var row = HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
-	p.add_child(row)
+	row.custom_minimum_size = Vector2(0, ROW_H)
+	col.add_child(row)
+	_build_colony_strip(col)
 	var logo = Icon.make("logo", ACCENT, 26)
 	logo.size_flags_vertical = SIZE_SHRINK_CENTER
 	row.add_child(logo)
-	var brand = _label("AGENT RTS", 18, TEXT)
+	var brand = _label("OUTPOST ZERO", 18, TEXT)
 	brand.add_theme_font_override("font", Ui.bold())
 	row.add_child(brand)
 	var tabs = HBoxContainer.new()
@@ -661,7 +674,7 @@ func _build_top_bar():
 		var b = Button.new()
 		b.text = t[0]
 		b.focus_mode = FOCUS_NONE
-		b.custom_minimum_size = Vector2(0, TOP_H)
+		b.custom_minimum_size = Vector2(0, ROW_H)
 		b.add_theme_font_size_override("font_size", 15)
 		var key = t[1]
 		b.pressed.connect(func(): _switch_tab(key))
@@ -695,6 +708,124 @@ func _build_top_bar():
 	clock.add_child(_date_label)
 	row.add_child(clock)
 	_update_clock()
+
+
+# The colony strip: the economy's hourly state (docs/economy.md). Every value is a stock,
+# a flow or a power figure the adapter computed this tick; the trend is the net per sol.
+const COLONY_STATS = [
+	["power", "bolt", Color(1.0, 0.8, 0.3), "Power: supply / demand, battery charge"],
+	["water", "drop", Color(0.45, 0.75, 1.0), "Water (L)"],
+	["food", "leaf", Color(0.55, 0.85, 0.45), "Food (meals)"],
+	["materials", "cube", Color(0.8, 0.7, 0.55), "Materials (kg)"],
+	["parts", "gear", Color(0.75, 0.78, 0.85), "Parts"],
+	["medicine", "cross", Color(1.0, 0.55, 0.6), "Medicine (doses)"],
+	["colonists", "people", Color(0.9, 0.85, 0.7), "Colonists awake / in cryo"],
+	["trust", "shield", Color(0.5, 0.8, 0.95), "Trust: the colonists' confidence in you"],
+	["influence", "eye", Color(0.8, 0.6, 1.0), "Influence: MOTHER's hold on the machines"],
+]
+
+
+func _build_colony_strip(parent: Control):
+	var strip = HBoxContainer.new()
+	strip.add_theme_constant_override("separation", 16)
+	strip.custom_minimum_size = Vector2(0, STRIP_H)
+	parent.add_child(strip)
+	_sol_label = _label("Sol —", 13, TEXT)
+	_sol_label.add_theme_font_override("font", Ui.bold())
+	_sol_label.size_flags_vertical = SIZE_SHRINK_CENTER
+	_sol_label.custom_minimum_size = Vector2(118, 0)
+	strip.add_child(_sol_label)
+	var speeds = HBoxContainer.new()
+	speeds.add_theme_constant_override("separation", 2)
+	speeds.size_flags_vertical = SIZE_SHRINK_CENTER
+	for sp in [[0, "II", "Pause the colony clock"], [1, "1×", "One game hour a minute"], [3, "3×", "Three game hours a minute"]]:
+		var b = Button.new()
+		b.text = sp[1]
+		b.tooltip_text = sp[2]
+		b.toggle_mode = true
+		b.focus_mode = FOCUS_NONE
+		b.custom_minimum_size = Vector2(30, 22)
+		b.add_theme_font_size_override("font_size", 12)
+		var speed = sp[0]
+		b.pressed.connect(func(): colony_command.emit({"type": "colony.set_speed", "speed": speed}))
+		speeds.add_child(b)
+		_speed_buttons[speed] = b
+	strip.add_child(speeds)
+	for spec in COLONY_STATS:
+		var h = HBoxContainer.new()
+		h.add_theme_constant_override("separation", 5)
+		h.tooltip_text = spec[3]
+		h.mouse_filter = MOUSE_FILTER_PASS
+		var i = Icon.make(spec[1], spec[2], 14)
+		i.size_flags_vertical = SIZE_SHRINK_CENTER
+		h.add_child(i)
+		var v = _label("—", 13)
+		v.size_flags_vertical = SIZE_SHRINK_CENTER
+		h.add_child(v)
+		var t = _label("", 11, MUTED)
+		t.size_flags_vertical = SIZE_SHRINK_CENTER
+		h.add_child(t)
+		strip.add_child(h)
+		_colony[spec[0]] = {"value": v, "trend": t, "icon": i}
+
+
+func _colony_set(key: String, value: String, trend := "", color := TEXT):
+	var st = _colony[key]
+	st["value"].text = value
+	st["value"].add_theme_color_override("font_color", color)
+	st["trend"].text = trend
+	st["trend"].visible = trend != ""
+
+
+static func _per_sol(flow: float) -> String:
+	if abs(flow) < 0.5:
+		return ""
+	return ("+%d" if flow > 0 else "%d") % int(round(flow)) + "/sol"
+
+
+func set_colony(c):
+	if c == null or _sol_label == null:
+		return
+	_sol_label.text = "Sol %d  %02d:00  %s" % [int(c.get("sol", 0)), int(c.get("hour", 0)), "day" if c.get("daylight", true) else "night"]
+	var speed = int(c.get("speed", 1))
+	for sp in _speed_buttons:
+		_speed_buttons[sp].button_pressed = sp == speed
+	var p = c.get("power", {})
+	var cut = p.get("cut", [])
+	var power_color = TEXT
+	if cut.size() > 0:
+		power_color = Ui.BAD if "lifeSupport" in cut or "water" in cut or "food" in cut else Ui.WARN
+	_colony_set("power", "%d / %d kW" % [int(round(p.get("supplyKw", 0))), int(round(p.get("demandKw", 0)))], "%d kWh" % int(round(p.get("chargeKwh", 0))), power_color)
+	var stocks = c.get("stocks", {})
+	var flows = c.get("flows", {})
+	var caps = c.get("caps", {})
+	for key in ["water", "food", "materials", "parts", "medicine"]:
+		var v = float(stocks.get(key, 0))
+		var f = float(flows.get(key, 0))
+		var color = TEXT
+		if v <= 0.0:
+			color = Ui.BAD
+		elif f < 0 and v / max(1.0, -f) < 2.0:  # less than two sols left at this rate
+			color = Ui.WARN
+		elif caps.has(key) and v >= 0.9 * float(caps[key]):
+			color = MUTED
+		_colony_set(key, _fmt_int(int(v)), _per_sol(f), color)
+	var col = c.get("colonists", {})
+	var col_note = "%d in cryo" % int(col.get("cryo", 0))
+	var col_color = TEXT
+	if col.get("striking", false):
+		col_note = "on strike"
+		col_color = Ui.BAD
+	elif col.get("hungry", false) or col.get("thirsty", false):
+		col_note = "hungry" if col.get("hungry", false) else "thirsty"
+		col_color = Ui.WARN
+	elif int(col.get("waking", 0)) > 0:
+		col_note = "waking %d" % int(col["waking"])
+	_colony_set("colonists", "%d" % int(col.get("awake", 0)), col_note, col_color)
+	var trust = float(c.get("trust", 0))
+	_colony_set("trust", "%d" % int(round(trust)), "", Ui.BAD if trust < 30 else (Ui.WARN if trust < 45 else TEXT))
+	var infl = float(c.get("influence", 0))
+	_colony_set("influence", "%d" % int(round(infl)), "", Ui.BAD if infl >= 60 else (Ui.WARN if infl >= 30 else TEXT))
 
 
 func _stat(icon_kind: String, color: Color) -> HBoxContainer:
