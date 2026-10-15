@@ -89,3 +89,15 @@ func _save():
 func set_area(centre: Vector2, half_size: Vector2):
 	material_override.set_shader_parameter("centre", centre)
 	material_override.set_shader_parameter("half_size", half_size)
+
+
+# Other teams' bases on the match map stay clear of the shroud too (up to three).
+func set_extra_areas(areas: Array):
+	for i in 3:
+		var c = Vector2(-9999, -9999)
+		var h = Vector2.ZERO
+		if i < areas.size():
+			c = areas[i][0]
+			h = areas[i][1]
+		material_override.set_shader_parameter("centre%d" % (i + 2), c)
+		material_override.set_shader_parameter("half_size%d" % (i + 2), h)

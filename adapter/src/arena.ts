@@ -3,7 +3,7 @@
 // the token budget, scores the colony, and ends the match on its objective or its last sol.
 import { EventEmitter } from "node:events";
 import { Colony, ColonyError, type ColonyRunner, type ColonyView, DEPTS } from "./economy.ts";
-import type { ArenaInfo, ScoreEntry, ServerMessage } from "./contract.ts";
+import type { ArenaInfo, BaseOnMap, ScoreEntry, ServerMessage } from "./contract.ts";
 import type { World } from "./world.ts";
 
 export type Mode = "race" | "timed";
@@ -83,6 +83,9 @@ export class Arena extends EventEmitter {
   private govTokens = 0;
   // Other teams' scores, set by the match director (tools/match_director.mjs).
   private others: ScoreEntry[] = [];
+  // The match map: every team's base origin (from the director; design/maps.json).
+  private map = "solo";
+  private bases: BaseOnMap[] = [];
 
   constructor(runner: ColonyRunner, world: World) {
     super();
@@ -112,9 +115,11 @@ export class Arena extends EventEmitter {
     };
   }
 
-  setScoreboard(entries: ScoreEntry[]): void {
+  setScoreboard(entries: ScoreEntry[], bases?: BaseOnMap[], map?: string): void {
     const mine = this.match?.config.team ?? "A";
     this.others = entries.filter((e) => e.team !== mine);
+    if (bases) this.bases = bases;
+    if (map) this.map = map;
     this.publishInfo();
   }
 
@@ -124,6 +129,8 @@ export class Arena extends EventEmitter {
     const v = this.runner.colony.view();
     return {
       id: m.id,
+      map: this.map,
+      bases: this.bases,
       status: m.status,
       mode: m.config.mode,
       objective: m.config.objective,

@@ -207,12 +207,22 @@ both.
 - **The scoreboard** is a panel under the top bar in every game window (`arena.update` events):
   mode, objective, sol, and per team the model, colony value, colonists awake, tokens and
   average latency, the leader in green, frozen teams marked.
-- **Change to §9:** the spec asked for all bases on one map. Phase 5 keeps one base per
-  adapter and per game window, each with the full scoreboard, because a team is a whole
-  stack (its own Hermes, agents, layout and colony) and merging two worlds into one scene
-  would have meant a second rendering path for agents that are not the window's own. A
-  spectator opens one window per team (`OUTPOST_ZERO_WS=ws://127.0.0.1:8781/world godot
-  --path game` for B) and watches them side by side. The side-by-side replay stays deferred.
+- **Match maps** (`design/maps.json`): `duel` puts A at the west and B at the east of one
+  world with 36 units of wild between the walls; `trio` and `quad` use three and four corners.
+  The director passes every base's origin and world feed to each adapter, and each window
+  renders the other teams' bases at their offsets (`RemoteBase.gd`: a read-only connection to
+  that team's adapter, its buildings with their construction and power states, its walls, and a
+  plate with its live numbers), clear of the shroud and the scenery, inside the camera's reach.
+  The remote base carries the same ground markings as the own base (streets, district tints
+  and names, Rally Point and Repair Bay) in the window's terrain colours, and its buildings in a
+  muted team tint. A team's own agents and crowd stay in its own window; the other base is a
+  mirror of its state, not a second simulation. The side-by-side replay stays deferred.
+- **One clock for every team.** The colony clock is set per adapter
+  (`COLONY_SECONDS_PER_HOUR`), so a team on a faster clock would play more hours per real
+  second than its opponent. The director reads every team's clock before it starts a match
+  and refuses uneven ones (`--uneven-clocks` overrides, for tests only). Verified 2026-10-15:
+  a 2-sol duel on the `duel` map, both adapters at 2 s/hour, finished with a winner, an Elo
+  update and `.data/matches/<id>.json`; both windows showed the other base on the far side.
 
 ## 9. The spectator view
 

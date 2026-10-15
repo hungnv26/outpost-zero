@@ -227,6 +227,14 @@ verified in Phase 0.
 
 Later phases, not planned in detail yet: Chapters III and IV, endings, factions, Contest mode.
 
+### After the plan: match maps — DONE 2026-10-15
+
+Requested after v1: teams on opposite sides of one map. `design/maps.json` (`solo`, `duel`,
+`trio`, `quad`), the director's `--map`, bases in `ArenaInfo`, and `RemoteBase.gd` rendering
+the other teams' bases read-only in every window (docs/arena.md §8b). The director now
+refuses uneven colony clocks. Evidence: a 2-sol duel on `duel`, both windows captured with
+`--camera-at`/`--camera-size`, winner and Elo recorded.
+
 ## 6. Milestones
 
 | Milestone | Phases | What you can show |

@@ -92,11 +92,14 @@ func _update_camera_indicator():
 		Vector2.ZERO
 	]
 	for index in range(camera_corners.size()):
+		# A wide orthographic view can start a corner ray below the ground (no hit ahead);
+		# the ray's origin projected onto the ground is as good a corner then.
+		var origin = camera.project_ray_origin(camera_corners[index])
+		var hit = GROUND_LEVEL_PLANE.intersects_ray(origin, camera.project_ray_normal(camera_corners[index]))
+		if hit == null:
+			hit = GROUND_LEVEL_PLANE.project(origin)
 		var corner_mapped_to_3d_position_on_ground_level = (
-			GROUND_LEVEL_PLANE.intersects_ray(
-				camera.project_ray_origin(camera_corners[index]),
-				camera.project_ray_normal(camera_corners[index])
-			)
+			hit
 			* MINIMAP_PIXELS_PER_WORLD_METER
 		)
 		_camera_indicator.set_point_position(

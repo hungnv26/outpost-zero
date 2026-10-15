@@ -67,6 +67,8 @@ var _placement = null  # {kind, payload, label, preview} while placing in Build 
 var _terrain_id = ""
 var _env_duplicated = false  # the scene's Environment is copied once, then tuned per terrain
 var _crowd = null  # the colonists (Crowd.gd)
+var _remote_bases = {}  # team -> RemoteBase node (other teams on the match map)
+var _my_origin = Vector3.ZERO
 var _colony = {}  # the latest colony view (economy)
 var _light_preset = {}  # the terrain's sun and ambient, dimmed at night
 var _daylight = true
@@ -361,6 +363,9 @@ func _apply_terrain(id: String):
 	_light_preset = t
 	_set_daylight(_daylight, true)
 	_decor.set_road_color(t["road"])
+	for rb in _remote_bases.values():
+		if is_instance_valid(rb):
+			rb.set_terrain(id)
 	if _hud != null:
 		_hud.set_terrain(id)
 
@@ -385,6 +390,63 @@ func _set_daylight(day: bool, immediate := false):
 	tw.tween_property(sun, "light_energy", sun_e, 2.5)
 	tw.tween_property(env, "ambient_light_energy", amb_e, 2.5)
 	tw.tween_property(env, "ambient_light_color", amb_c, 2.5)
+
+
+# Other teams' bases on the match map: each at its origin relative to ours, read from its
+# own adapter, clear of the shroud and the scenery, inside the camera's reach.
+func _set_remote_bases(arena):
+	var bases = arena.get("bases", []) if arena != null and not arena.is_empty() else []
+	var mine = _hud._colony_view.get("team", "") if _hud != null else ""
+	var my_team = arena.get("team", "A") if arena != null and not arena.is_empty() else "A"
+	for b in bases:
+		if b.get("team", "") == my_team:
+			_my_origin = Vector3(float(b["origin"]["x"]), 0, float(b["origin"]["z"]))
+	var wanted = {}
+	var areas = []
+	var rects = []
+	var far = 0.0
+	for b in bases:
+		var team = b.get("team", "")
+		if team == my_team or b.get("ws") == null:
+			continue
+		wanted[team] = true
+		var off = Vector3(float(b["origin"]["x"]), 0, float(b["origin"]["z"])) - _my_origin
+		if not _remote_bases.has(team) or not is_instance_valid(_remote_bases[team]):
+			var rb = load("res://source/agent/RemoteBase.gd").new()
+			rb.team = team
+			rb.ws_url = str(b["ws"])
+			rb.offset = off
+			rb.make_building = func(def): return _make_building(def)
+			rb.label_scale = label_scale
+			rb.view_back = view_back()
+			rb.terrain_id = _terrain_id
+			add_child(rb)
+			_remote_bases[team] = rb
+		var half = Vector2(Departments.MAP_SIZE, Departments.MAP_SIZE) * 0.5
+		areas.append([Vector2(off.x, off.z) + half, half + Vector2(1.5, 1.5)])
+		rects.append(Rect2(off.x - 6.0, off.z - 6.0, Departments.MAP_SIZE + 12.0, Departments.MAP_SIZE + 12.0))
+		far = max(far, abs(off.x) + Departments.MAP_SIZE, abs(off.z) + Departments.MAP_SIZE)
+	for team in _remote_bases.keys():
+		if not wanted.has(team):
+			if is_instance_valid(_remote_bases[team]):
+				_remote_bases[team].queue_free()
+			_remote_bases.erase(team)
+	if _shroud != null:
+		_shroud.set_extra_areas(areas)
+	if _scenery != null and _scenery.exclude != rects:
+		_scenery.exclude = rects
+		_scenery.build(_terrain_id)
+	# The ground and the camera reach the other bases.
+	var backdrop = map.find_child("Backdrop")
+	if backdrop != null:
+		var want = max(200.0, 2.0 * (far + 40.0))
+		if absf(backdrop.mesh.size.x - want) > 1.0:
+			backdrop.mesh.size = Vector2(want, want)
+	var reach = WORLD_MARGIN + max(0.0, far - Departments.MAP_SIZE) + 10.0
+	_camera.bounding_planes[0] = Plane(1, 0, 0, -reach)
+	_camera.bounding_planes[1] = Plane(-1, 0, 0, -(Departments.MAP_SIZE + reach))
+	_camera.bounding_planes[2] = Plane(0, 0, 1, -reach)
+	_camera.bounding_planes[3] = Plane(0, 0, -1, -(Departments.MAP_SIZE + reach))
 
 
 # The colony view (economy) reaches the map: building states, the crowd, day and night.
@@ -659,6 +721,7 @@ func _on_message(msg):
 				_apply_layout(world["layout"])
 			_hud.apply_snapshot(world)
 			_hud.set_arena(world.get("arena"))
+			_set_remote_bases(world.get("arena"))
 			_apply_colony(world.get("resources", {}).get("colony"))
 			_hud.set_connection(true, world.get("source", ""))
 			for a in world.get("agents", []):
@@ -677,6 +740,7 @@ func _on_message(msg):
 			_apply_layout(msg["layout"])
 		"arena.update":
 			_hud.set_arena(msg.get("arena"))
+			_set_remote_bases(msg.get("arena"))
 		"agent.removed":
 			_remove_agent(msg.get("agentId", ""))
 		"error":
@@ -934,6 +998,7 @@ func _focus_agent(agent_id):
 
 # Dev aid: --capture-dir=DIR --capture-at=5,12,20 [--quit-after-capture] [--open-settings|--open-build]
 # saves viewport screenshots at those seconds (used for automated visual checks).
+# --camera-at=x,z --camera-size=N frame a spot of the match map (e.g. both bases of a duel).
 func _setup_capture():
 	var dir = ""
 	var times = []
@@ -956,6 +1021,13 @@ func _setup_capture():
 			_hud._switch_tab.call_deferred(arg.substr(6))
 		elif arg == "--open-build":
 			_hud.toggle_build.call_deferred()
+		elif arg.begins_with("--camera-at="):
+			var xz = arg.substr(12).split(",")
+			if xz.size() == 2:
+				get_tree().create_timer(4.0).timeout.connect(func(): _camera.set_position_safely(Vector3(float(xz[0]), 0, float(xz[1]))))
+		elif arg.begins_with("--camera-size="):
+			var want = float(arg.substr(14))
+			get_tree().create_timer(4.0).timeout.connect(func(): _camera.size = want)
 		elif arg == "--open-build-terrain":
 			_hud.toggle_build.call_deferred()
 			_hud._build_panel._switch_tab.call_deferred("terrain")

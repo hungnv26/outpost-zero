@@ -103,8 +103,17 @@ export interface ScoreEntry {
   color?: string;
 }
 
+export interface BaseOnMap {
+  team: string;
+  origin: { x: number; z: number }; // world units; the window's own base is at its origin
+  ws: string | null; // the team's adapter world feed, for rendering its base
+  model?: string;
+}
+
 export interface ArenaInfo {
   id: string;
+  map: string; // design/maps.json preset
+  bases: BaseOnMap[];
   status: "lobby" | "running" | "finished";
   mode: string;
   objective: string;

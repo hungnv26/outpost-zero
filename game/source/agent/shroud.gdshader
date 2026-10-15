@@ -12,6 +12,12 @@ uniform sampler2D reveal_tex : filter_linear, repeat_disable;  // land explored 
 uniform vec3 reveal_rect = vec3(-30.0, -30.0, 104.0);  // world min x, min z, size
 uniform vec2 centre = vec2(22.0, 22.0);
 uniform vec2 half_size = vec2(26.0, 26.0);  // explored area (base plus a margin), before rounding
+uniform vec2 centre2 = vec2(-9999.0, -9999.0);  // a second clear area: another team's base on the map
+uniform vec2 half_size2 = vec2(0.0, 0.0);
+uniform vec2 centre3 = vec2(-9999.0, -9999.0);
+uniform vec2 half_size3 = vec2(0.0, 0.0);
+uniform vec2 centre4 = vec2(-9999.0, -9999.0);
+uniform vec2 half_size4 = vec2(0.0, 0.0);
 uniform float corner = 20.0;  // rounding of the explored square: the base's corners fade out
 uniform float edge = 9.0;  // width of the soft edge
 uniform float strength = 0.93;  // darkness of fully unexplored ground
@@ -35,6 +41,9 @@ void fragment() {
 	float n = texture(noise_tex, world.xz * 0.025).r;
 	float n2 = texture(noise_tex, world.xz * 0.09 + vec2(0.37, 0.71)).r;
 	float d = rounded_box(world.xz - centre, half_size, corner);
+	d = min(d, rounded_box(world.xz - centre2, half_size2, corner));
+	d = min(d, rounded_box(world.xz - centre3, half_size3, corner));
+	d = min(d, rounded_box(world.xz - centre4, half_size4, corner));
 	d += (n - 0.5) * 10.0 + (n2 - 0.5) * 3.0;
 	float fog = smoothstep(0.0, edge, d) * strength;
 	vec2 ruv = (world.xz - reveal_rect.xy) / reveal_rect.z;

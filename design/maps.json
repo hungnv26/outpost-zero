@@ -1,0 +1,7 @@
+{
+  "$comment": "Match maps (docs/arena.md): every team's base is the usual 44-unit base; a map places the bases in one shared world, on opposite sides, with the wild between them. Origins are in world units; a window renders its own base at the origin and the others at their offsets.",
+  "solo": { "name": "Solo", "world": 44, "bases": { "A": [0, 0] } },
+  "duel": { "name": "Duel", "world": 124, "bases": { "A": [0, 0], "B": [80, 0] }, "$sides": "A west, B east, 36 units of wild between the walls" },
+  "trio": { "name": "Trio", "world": 124, "bases": { "A": [0, 0], "B": [80, 0], "C": [40, 80] } },
+  "quad": { "name": "Quad", "world": 124, "bases": { "A": [0, 0], "B": [80, 0], "C": [0, 80], "D": [80, 80] }, "$sides": "one base per corner" }
+}

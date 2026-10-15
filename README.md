@@ -80,6 +80,9 @@ scripts/arena.sh start --teams A,B --mode race --objective awakening --sols 60
 OUTPOST_ZERO_WS=ws://127.0.0.1:8781/world godot --path game # watch team B's window
 ```
 
+The teams sit on opposite sides of one map (`design/maps.json`: `duel`, `trio`, `quad`); each
+window shows its own base and the other teams' bases across the wild, read from their adapters.
+
 Frontier models: put the provider keys in `infra/providers.env` (gitignored) and bring a team
 up with `B=anthropic:claude-opus-4-1` or `B=openai:gpt-5`. Each team is a Docker Compose project
 with its own model file. The director keeps an Elo per model in `.data/elo.json` and posts the
@@ -135,7 +138,6 @@ The world contract (events and commands) is in `adapter/src/contract.ts` and
 - Hermes does not always report the Governor's chat in its token log; the referee then estimates
   the round's tokens from its length and says so in the code.
 - Chapters III and IV, the endings, machine factions and Contest mode are after version 1.
-- All bases on one map (arena.md §9) became one base per window with a shared scoreboard.
 
 ## Licences
 

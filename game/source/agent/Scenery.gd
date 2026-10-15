@@ -28,6 +28,7 @@ const ROCK_TINT = {
 }
 
 var map_size = 44.0
+var exclude = []  # [Rect2] in world xz: other teams' bases on the match map (no props there)
 
 
 func build(terrain: String):
@@ -46,6 +47,8 @@ func build(terrain: String):
 		var p = Vector3(rng.randf_range(-52, map_size + 52), 0, rng.randf_range(-52, map_size + 52))
 		var out = _outside(p)
 		if out < 0.8:
+			continue
+		if exclude.any(func(r): return r.has_point(Vector2(p.x, p.z))):
 			continue
 		# Denser near the base, thinning out further away.
 		if rng.randf() > clampf(1.15 - out / 40.0, 0.25, 1.0):

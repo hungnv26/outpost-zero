@@ -87,3 +87,17 @@ test("the arena API needs the token and serves observations and actions", async 
     http.close();
   }
 });
+
+test("the match map places the teams' bases on opposite sides and the window learns them", async () => {
+  const { arena, world } = await setup();
+  arena.start({ mode: "timed", sols: 2 });
+  const bases = [
+    { team: "A", origin: { x: 0, z: 0 }, ws: "ws://127.0.0.1:8771/world" },
+    { team: "B", origin: { x: 80, z: 0 }, ws: "ws://127.0.0.1:8781/world" },
+  ];
+  arena.setScoreboard([{ team: "B", model: "x", value: 1, awake: 24, tokens: 0, avgLatencyS: null, status: "running" }], bases, "duel");
+  const info = arena.info()!;
+  assert.equal(info.map, "duel");
+  assert.deepEqual(info.bases.map((b) => [b.team, b.origin.x]), [["A", 0], ["B", 80]]);
+  assert.equal(world.snapshot().arena?.bases.length, 2);
+});

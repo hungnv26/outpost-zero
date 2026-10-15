@@ -56,8 +56,8 @@ export function startArenaServer(arena: Arena, port: number, token: string, host
       let body = "";
       for await (const chunk of req) body += chunk;
       try {
-        const sb = JSON.parse(body || "{}").scoreboard;
-        arena.setScoreboard(Array.isArray(sb) ? sb : []);
+        const b = JSON.parse(body || "{}");
+        arena.setScoreboard(Array.isArray(b.scoreboard) ? b.scoreboard : [], Array.isArray(b.bases) ? b.bases : undefined, typeof b.map === "string" ? b.map : undefined);
         return json(200, { ok: true });
       } catch (e) {
         return json(400, { error: e instanceof Error ? e.message : String(e) });

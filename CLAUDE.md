@@ -30,10 +30,12 @@ frontier-model Arena team (needs `infra/providers.env`), Chapters III–IV and t
 - `scripts/setup.sh` once (clones the pinned foundations into `vendor/`, builds Hermes images, installs
   Mission Control and the adapter). `vendor/`, `.data/`, `.env`, `infra/hermes.env` are gitignored.
 - `scripts/start.sh` (`--fake` for no LLM, `--no-game` for services only), `scripts/stop.sh`.
-- Adapter checks: `cd adapter && npm test && npm run typecheck` (36 tests, the balance check among them).
+- Adapter checks: `cd adapter && npm test && npm run typecheck` (37 tests, the balance check among them).
 - Fast clock for play-testing: `COLONY_SECONDS_PER_HOUR=0.3`; `node tools/play_default.mjs 12` plays the default order over HTTP.
-- Arena: `scripts/arena.sh up B=ollama:agentrts-qwen3` (Hermes 8102, adapter 8781, Arena API 8782), `tools/match_director.mjs start --teams A,B ...`.
-- Screenshots: `godot --path game -- --capture-dir=DIR --capture-at=8 --quit-after-capture` (the CLI godot is not visible to desktop automation).
+- Arena: `scripts/arena.sh up B=ollama:agentrts-qwen3` (Hermes 8102, adapter 8781, Arena API 8782), `tools/match_director.mjs start --teams A,B --map duel ...`.
+  Every team's adapter must run the same `COLONY_SECONDS_PER_HOUR` (export it before `arena.sh up`; the director refuses uneven clocks). A team's window: `OUTPOST_ZERO_WS=ws://127.0.0.1:8781/world godot --path game`.
+- Screenshots: `godot --path game -- --capture-dir=DIR --capture-at=8 --quit-after-capture` (the CLI godot is not visible to desktop automation);
+  `--camera-at=62,20 --camera-size=110` frames both bases of a duel.
 - Stop processes by their pid files (`.data/adapter.pid`, `.data/teams/<T>.pid`); a broad `pkill -f "node src/main.ts"` also kills Agent RTS's adapter.
 - Never start Mission Control from the app's preview pane. Never QA against the user's other stacks.
 
