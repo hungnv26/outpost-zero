@@ -63,7 +63,7 @@ returns the snapshot.
 Agents map from Hermes as follows: the orchestrator (`jarvis`) → Commander, `research` →
 Researcher, `scout` → Scout, `insights` → Analyst (reasoning only), `code` → Coder,
 `writer` → Writer (reasoning only), `reviewer` → Reviewer (reasoning only). Tools map to departments: search tools →
-Research, code and shell tools → Engineering, notes and RAG → Knowledge; the agent drives to
+Research, code and shell tools → Industry (code), notes and RAG → Life Support (knowledge); the agent drives to
 its own home if that building hosts the work, otherwise the nearest building of that
 department. Otherwise each role has a home building.
 
@@ -99,7 +99,7 @@ report**). **▶ Replay** in the report panel plays it again.
 
 The adapter owns the base layout (`adapter/src/layout.ts`, saved to `.data/base.json`):
 buildings (position, model, colour, capability), the two spots, and the characters. A
-building's capability is its department (Command, Research, Engineering, Knowledge, Commons),
+building's capability is its department, shown as a sector (Command, Science, Industry, Life Support, Quarters),
 which sets its colour and its district: the map is a 3×3 grid of districts with 2×2 slots on
 a 7-unit lattice on a 44-unit map, and `layout.organise` moves every building into its district's slots. The
 snapshot carries it, and edits arrive as `layout.*` commands (`building.upsert/remove`,

@@ -74,6 +74,8 @@ export function parseCommand(raw: string): ClientCommand | null {
       return typeof c.path === "string" ? { type: "colony.path", path: c.path } : null;
     case "colony.unordered":
       return typeof c.recall === "boolean" ? { type: "colony.unordered", recall: c.recall } : null;
+    case "colony.shutdown_mother":
+      return { type: "colony.shutdown_mother" };
     default:
       return null;
   }
@@ -112,6 +114,8 @@ export function startServer(world: World, source: Source, port: number, host = "
             return c.choosePath(cmd.path);
           case "colony.unordered":
             return r.recallUnordered(cmd.recall);
+          case "colony.shutdown_mother":
+            return c.shutdownMother();
         }
       });
     }

@@ -96,7 +96,8 @@ export function roundPrompt(observation: unknown, first: boolean): string {
   const rules = first
     ? [
         "You are the Governor of Outpost Zero, a colony on a hostile planet. You play a match: keep the colonists alive and reach the objective before the sols run out.",
-        "Act by calling the colony_* tools (colony_build, colony_wake, colony_toggle, colony_research, colony_repair, colony_autonomy, colony_study, colony_note). Each call is one action; at most a few per hour.",
+        "Act by calling the colony_* tools (colony_build, colony_wake, colony_toggle, colony_research, colony_repair, colony_autonomy, colony_study, colony_path, colony_shutdown_mother, colony_note). Each call is one action; at most a few per hour.",
+        "The story advances in chapters: Chapter II opens the ruins (choose a path once), Chapter III splits the machines into factions as MOTHER's influence grows (you may shut MOTHER down), Chapter IV (Alien Tech plus a Relay Dish) unlocks the endings: Exodus (Launch Gantry), New Eden (180 awake, trust) or Singularity (Network Link). Extinction loses.",
         "Rules of thumb: water and food first (Water Extractor, Hydroponics Bay), then a Solar Array and a Scrap Yard for materials; wake 8 colonists only when food and water production can carry them and beds are free; build a Research Lab and use colony_study to earn data; keep the reactor repaired.",
         "If nothing is affordable or useful this hour, do nothing and reply with one short line.",
       ]

@@ -9,7 +9,7 @@ signal place(kind, payload, label_text)  # ask the map for a click position
 
 const Departments = preload("res://source/agent/Departments.gd")
 # Departments a player's building can join (Command is the Command Centre and Approval only).
-const CAPABILITIES = [["Research", "research"], ["Engineering", "code"], ["Knowledge", "knowledge"], ["Commons", "meeting"]]
+const CAPABILITIES = [["Science", "research"], ["Industry", "code"], ["Life Support", "knowledge"], ["Quarters", "meeting"]]
 # Models that look the part for each department, offered first.
 const SUGGESTED = {
 	"research": ["lander_A", "lander_B", "GeodesicDome", "SolarPanelStructure", "solarpanel", "satelliteDish_large", "satelliteDish_detailed", "satelliteDish", "AircraftFactory", "Rocket"],
@@ -17,8 +17,8 @@ const SUGGESTED = {
 	"knowledge": ["basemodule_A", "basemodule_B", "basemodule_C", "basemodule_D", "basemodule_E", "HouseCylinder", "HouseLong", "hangar_roundGlass", "hangar_roundA"],
 	"meeting": ["landingpad_large", "structure_low", "containers_A", "BaseLarge", "HouseSingle", "structure_detailed", "gate_simple", "gate_complex", "AntiGroundTurret"],
 }
-const SKILLS = [["Web research", "web"], ["Thinking only", "reasoning"]]
-const SKILL_TEXT = {"web": "Web research", "reasoning": "Thinking", "code": "Code sandbox", "orchestrator": "Orchestrator"}
+const SKILLS = [["Field survey (web)", "web"], ["Analysis only", "reasoning"]]
+const SKILL_TEXT = {"web": "Field survey", "reasoning": "Analysis", "code": "Workshop", "orchestrator": "Coordinator"}
 const BUILDING_MODELS = [
 	"satelliteDish_large", "satelliteDish_detailed", "hangar_largeA", "hangar_largeB", "hangar_roundA",
 	"hangar_roundB", "hangar_roundGlass", "hangar_smallA", "hangar_smallB", "gate_complex", "gate_simple",
@@ -153,10 +153,10 @@ func _render():
 func _render_buildings():
 	_render_catalog()
 	var organise = hud._button("Organise base")
-	organise.tooltip_text = "Move every building into its department's district"
+	organise.tooltip_text = "Move every building into its sector's district"
 	organise.pressed.connect(func(): command.emit({"type": "layout.organise"}))
 	_body.add_child(organise)
-	_body.add_child(_hint("Each department has its own district on the map. New buildings go into theirs; Organise tidies everything back into place."))
+	_body.add_child(_hint("Each sector has its own district on the map. New buildings go into theirs; Organise tidies everything back into place."))
 	var permanent = {}
 	for e in _colony.get("buildings", []):
 		if e.get("permanent", false):
@@ -183,15 +183,15 @@ func _render_buildings():
 				row.add_child(del)
 		for sp in spots:
 			var col = Color(1.0, 0.82, 0.35) if sp["id"] == "rally_point" else Color(1.0, 0.4, 0.4)
-			var row = _row(col, sp["label"], "Agents waiting" if sp["id"] == "rally_point" else "Agents after an error")
+			var row = _row(col, sp["label"], "Machines waiting" if sp["id"] == "rally_point" else "Machines after a breakdown")
 			var move = _small("Move")
 			var spot = sp
 			move.pressed.connect(func(): place.emit("spot", {"id": spot["id"]}, spot["label"]))
 			row.add_child(move)
-	_body.add_child(_hint("Agents drive to a building of the department whose work matches the tool they use, preferring their own home."))
+	_body.add_child(_hint("Machines drive to a building of the sector whose work matches the tool they use, preferring their own home."))
 
 
-const DEPT_OF = {"Command": "command", "Research": "research", "Engineering": "code", "Knowledge": "knowledge", "Commons": "meeting"}
+const DEPT_OF = {"Command": "command", "Science": "research", "Industry": "code", "Life Support": "knowledge", "Quarters": "meeting"}
 
 
 # Research tiers bought with data (earned by real missions in a powered Research Lab).
@@ -233,7 +233,7 @@ func _render_catalog():
 	if catalog.is_empty():
 		_body.add_child(_hint("The economy is not running, so nothing can be built."))
 		return
-	for dept_name in ["Engineering", "Knowledge", "Research", "Commons"]:
+	for dept_name in ["Industry", "Life Support", "Science", "Quarters"]:
 		var items = catalog.filter(func(k): return k.get("dept", "") == dept_name)
 		if items.is_empty():
 			continue
@@ -299,7 +299,7 @@ func _render_agents():
 		var members = _layout.get("agents", []).filter(func(a): return Departments.of_building(_layout, a.get("home", "command_centre")) == dept)
 		if members.is_empty():
 			continue
-		_dept_header(dept, "%d agent%s" % [members.size(), "" if members.size() == 1 else "s"])
+		_dept_header(dept, "%d machine%s" % [members.size(), "" if members.size() == 1 else "s"])
 		for a in members:
 			var sub = SKILL_TEXT.get(a["skill"], "") + " · lives at " + _building_label(a["home"])
 			var row = _row(Color.html(a["color"]), a["name"], sub)
@@ -314,7 +314,7 @@ func _render_agents():
 	var add = hud._button("+ New character", true)
 	add.pressed.connect(func(): _open_agent_form(null))
 	_body.add_child(add)
-	_body.add_child(_hint("New characters are real Hermes agents: the Commander can give them work in the next mission."))
+	_body.add_child(_hint("New characters are real machines of the Hermes crew: the Foreman can give them work in the next mission."))
 
 
 func set_terrain(id: String):
@@ -386,9 +386,9 @@ func _render_building_form():
 	_body.add_child(name_edit)
 	var dept = Departments.of(d["capability"])
 	if not builtin:
-		_body.add_child(_field_label("Department"))
+		_body.add_child(_field_label("Sector"))
 		_body.add_child(_chips(CAPABILITIES, d["capability"], _set_and_render.bind(d, "capability")))
-	_body.add_child(_hint(Departments.NAMES[dept] + ": " + Departments.WORK[dept] + ("" if not builtin else " (built-in)") + ". Buildings take their department's colour."))
+	_body.add_child(_hint(Departments.NAMES[dept] + ": " + Departments.WORK[dept] + ("" if not builtin else " (built-in)") + ". Buildings take their sector's colour."))
 	var suggested = SUGGESTED.get(dept, [])
 	var picks = []
 	var others = []
@@ -408,7 +408,7 @@ func _render_building_form():
 		actions.add_child(save)
 	else:
 		var addb = hud._button("Add to district", true)
-		addb.tooltip_text = "Put it in the next free slot of its department's district"
+		addb.tooltip_text = "Put it in the next free slot of its sector's district"
 		addb.pressed.connect(
 			func():
 				if d["label"].strip_edges() == "":
@@ -441,7 +441,7 @@ func _render_agent_form():
 	var name_edit = _line(d.get("name", ""), "e.g. Market Watcher")
 	name_edit.text_changed.connect(func(t): d["name"] = t)
 	_body.add_child(name_edit)
-	_body.add_child(_field_label("Job (what this agent does)"))
+	_body.add_child(_field_label("Job (what this machine does)"))
 	if builtin:
 		_body.add_child(_hint(d.get("job", "")))
 	else:
@@ -453,7 +453,7 @@ func _render_agent_form():
 		job.add_theme_font_size_override("font_size", 14)
 		job.text_changed.connect(func(): d["job"] = job.text)
 		_body.add_child(job)
-		_body.add_child(_field_label("Skill"))
+		_body.add_child(_field_label("Specialty"))
 		_body.add_child(_chips(SKILLS, d["skill"], _set_and_render.bind(d, "skill")))
 	_body.add_child(_field_label("Vehicle"))
 	var vehicles = []
@@ -462,7 +462,7 @@ func _render_agent_form():
 	_body.add_child(_chips(vehicles, d["model"], _set_and_render.bind(d, "model")))
 	_body.add_child(_field_label("Colour"))
 	_body.add_child(_swatches(d["color"], _set_and_render.bind(d, "color")))
-	_body.add_child(_field_label("Home building (decides the department)"))
+	_body.add_child(_field_label("Home building (decides the sector)"))
 	for dept in Departments.ORDER:
 		var homes = []
 		for b in _layout.get("buildings", []):

@@ -22,8 +22,9 @@ Env override for the game's world feed: `OUTPOST_ZERO_WS`. Compose root override
 
 Phases 0–6 of `docs/master-plan.md` are done: economy, buildings and colonists on the map, real
 work feeding the economy, the Arena (referee, Governor, colony tools, Mission Control lobby,
-teams, director, Elo), story Chapters I–II with events and MOTHER's voice. Pending: a
-frontier-model Arena team (needs `infra/providers.env`), Chapters III–IV and the endings.
+teams, director, Elo), story Chapters I–IV with events, factions, MOTHER's shutdown, the four
+endings and MOTHER's voice; match maps. Pending: a frontier-model Arena team (needs
+`infra/providers.env`), Contest mode, the side-by-side replay.
 
 ## Run
 
@@ -42,9 +43,11 @@ frontier-model Arena team (needs `infra/providers.env`), Chapters III–IV and t
 ## Conventions carried over
 
 - HUD shows only real, working data. No neon, strong glow or moving lights. Static scenery is welcome.
-- The base stays organised in departments (Command, Research, Engineering, Knowledge, Commons) on the
+- The base stays organised in sectors (on screen: Command, Science, Industry, Life Support, Quarters;
+  in the code the departments keep their Hermes capability keys command/research/code/knowledge/meeting) on the
   3x3 district grid. Every unit is a real Hermes agent; custom characters get web_search or reasoning only.
-- Hermes never creates approvals; the adapter owns the Human Approval checkpoint.
+- Hermes never creates approvals; the adapter owns the Oversight Post (human approval) checkpoint.
+- Renamed 2026-10-15 at the user's request: no Agent RTS era terms on screen (agents → machines, departments → sectors, Knowledge → Life Support, Research → Science, Engineering → Industry, Commons → Quarters, Human Approval → Oversight Post, Deploy → Dispatch, skills → specialties). Ids and capability keys are unchanged.
 
 ## Design docs
 

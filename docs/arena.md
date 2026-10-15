@@ -217,6 +217,10 @@ both.
   and names, Rally Point and Repair Bay) in the window's terrain colours, and its buildings in a
   muted team tint. A team's own agents and crowd stay in its own window; the other base is a
   mirror of its state, not a second simulation. The side-by-side replay stays deferred.
+- **Endings (2026-10-15).** A third objective, `ending`: the first team to reach Exodus, New
+  Eden or Singularity wins the race; Extinction ends a team's match as a loss in any mode, and
+  any ending finishes the team's match. The Governor gets `colony_shutdown_mother` and a
+  summary of the chapters in its first prompt.
 - **One clock for every team.** The colony clock is set per adapter
   (`COLONY_SECONDS_PER_HOUR`), so a team on a faster clock would play more hours per real
   second than its opponent. The director reads every team's clock before it starts a match

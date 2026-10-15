@@ -9,7 +9,7 @@ export type AgentState =
   | "thinking" // planning in place
   | "working" // inside a building doing a task
   | "waiting" // blocked on another agent, at the rally point
-  | "approval" // blocked on a human, at Human Approval
+  | "approval" // blocked on a human, at the Oversight Post
   | "error" // something failed, at the repair bay
   | "complete"; // finished its part, heading home
 
@@ -196,4 +196,5 @@ export type ClientCommand =
   | { type: "colony.research"; tier: string }
   | { type: "autonomy.set"; target: string; level: number }
   | { type: "colony.path"; path: string }
-  | { type: "colony.unordered"; recall: boolean };
+  | { type: "colony.unordered"; recall: boolean }
+  | { type: "colony.shutdown_mother" };

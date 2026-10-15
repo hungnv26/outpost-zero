@@ -123,7 +123,7 @@ def _tool(name, description, props=None, required=None):
 
 COLONY_TOOL_SCHEMAS = [
     _tool("colony_state", "The colony's current observation: stocks, power, colonists, buildings, catalog, research, budget."),
-    _tool("colony_build", "Build a building from the catalog (paid up front; two idle machines build it). Types: waterExtractor, solarArray, batteryBank, scrapYard, hydroponics, medBay, researchLab, storageDepot, habitat, fabricator, relayDish.",
+    _tool("colony_build", "Build a building from the catalog (paid up front; two idle machines build it). Types: waterExtractor, solarArray, batteryBank, scrapYard, hydroponics, medBay, researchLab, storageDepot, habitat, fabricator, relayDish, excavationSite (Chapter II), launchGantry and networkLink (Chapter IV).",
           {"type": {"type": "string", "description": "catalog type, e.g. waterExtractor"}}, ["type"]),
     _tool("colony_cancel_build", "Cancel the building under construction (half the cost is refunded)."),
     _tool("colony_toggle", "Switch a building off or on (saves power or inputs).",
@@ -139,6 +139,7 @@ COLONY_TOOL_SCHEMAS = [
           {"topic": {"type": "string"}}, ["topic"]),
     _tool("colony_note", "A one-line note for the spectators (max 120 characters).", {"text": {"type": "string"}}, ["text"]),
     _tool("colony_path", "Chapter II only: choose what to do with the ruins: exploit, contain or communicate (once).", {"path": {"type": "string"}}, ["path"]),
+    _tool("colony_shutdown_mother", "Chapter III or later, once: shut MOTHER down. Influence -40, trust +5, but autonomy is capped at Supervised, machine efficiency x0.8 and the compute budget halves."),
 ]
 COLONY_TOOL_NAMES = [t["function"]["name"] for t in COLONY_TOOL_SCHEMAS]
 

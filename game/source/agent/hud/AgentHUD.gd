@@ -85,6 +85,12 @@ var _roster_scroll: ScrollContainer
 var _roster_title: Label
 var _dept_headers = {}  # department -> {"box": Control, "label": Label}
 var _legend_rows = {}  # department -> {"count": Label}
+var _mother_row: PanelContainer  # Chapter III+: MOTHER's state and the shutdown control (Sectors tab)
+var _mother_label: Label
+var _mother_button: Button
+var _mother_confirm = false
+var _endings_box: VBoxContainer  # Chapter IV+: what each ending still needs
+var _endings_rows = []
 var _layout = {}
 var _cards = {}
 var _input: LineEdit
@@ -237,6 +243,7 @@ func set_agent(a):
 		_cards[a["id"]] = _make_card(a)
 		_regroup_roster()
 	var card = _cards[a["id"]]
+	card.faction.text = _faction_text(a["id"])
 	var style = STATE_STYLE.get(a.get("state", "idle"), STATE_STYLE["idle"])
 	card.state.text = style["text"].capitalize()
 	card.state.add_theme_color_override("font_color", style["color"])
@@ -247,6 +254,20 @@ func set_agent(a):
 		_render_agent_panel()
 	if _selected_building != "":
 		_render_building_panel()
+
+
+# "MOTHER's" or "independent" once the machines have split (Chapter III); nothing for yours.
+func _faction_text(agent_id: String) -> String:
+	var chapter = str(_colony_view.get("story", {}).get("chapter", "I"))
+	if chapter != "III" and chapter != "IV":
+		return ""
+	var f = str(_colony_view.get("machines", {}).get("factionOf", {}).get(agent_id, "yours"))
+	return "MOTHER's" if f == "mother" else ("independent" if f == "independent" else "")
+
+
+func _update_faction_tags():
+	for id in _cards:
+		_cards[id].faction.text = _faction_text(id)
 
 
 func set_task(t):
@@ -684,7 +705,7 @@ func _build_top_bar():
 	row.add_child(brand)
 	var tabs = HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 2)
-	for t in [["Mission", "mission"], ["Departments", "departments"], ["Build", "build"], ["Settings", "settings"]]:
+	for t in [["Mission", "mission"], ["Sectors", "departments"], ["Build", "build"], ["Settings", "settings"]]:
 		var b = Button.new()
 		b.text = t[0]
 		b.focus_mode = FOCUS_NONE
@@ -836,7 +857,10 @@ func set_colony(c):
 	var col = c.get("colonists", {})
 	var col_note = "%d in cryo" % int(col.get("cryo", 0))
 	var col_color = TEXT
-	if col.get("striking", false):
+	if c.get("events", {}).get("mutiny", false):
+		col_note = "mutiny"
+		col_color = Ui.BAD
+	elif col.get("striking", false):
 		col_note = "on strike"
 		col_color = Ui.BAD
 	elif col.get("hungry", false) or col.get("thirsty", false):
@@ -849,6 +873,8 @@ func set_colony(c):
 	var comp = c.get("compute", {})
 	_colony_set("compute", "%d / %d k" % [int(round(float(comp.get("solKTok", 0)))), int(comp.get("budgetKTok", 0))], "", Ui.BAD if comp.get("exhausted", false) else TEXT)
 	_render_departments_autonomy()
+	_render_mother_and_endings()
+	_update_faction_tags()
 	set_story(c.get("story"), c.get("events", {}))
 	var trust = float(c.get("trust", 0))
 	_colony_set("trust", "%d" % int(round(trust)), "", Ui.BAD if trust < 30 else (Ui.WARN if trust < 45 else TEXT))
@@ -933,7 +959,7 @@ func _build_mission_panel():
 	_input.custom_minimum_size = Vector2(0, 34)
 	_input.text_submitted.connect(func(_t): _on_deploy())
 	input_row.add_child(_input)
-	_deploy = _button("Deploy", true)
+	_deploy = _button("Dispatch", true)
 	_deploy.custom_minimum_size = Vector2(76, 34)
 	_deploy.pressed.connect(_on_deploy)
 	input_row.add_child(_deploy)
@@ -961,14 +987,14 @@ func _build_mission_panel():
 	_render_mission_status()
 
 
-# Departments tab: each department's colour, what it does and how big it is. Clicking a
+# Sectors tab (departments in the code): each sector's colour, what it does and how big it is. Clicking a
 # row moves the camera to that district.
 func _build_departments_panel():
 	_left_departments = _left_panel()
 	var v = VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
 	_left_departments.add_child(v)
-	v.add_child(_title("DEPARTMENTS", "meeting"))
+	v.add_child(_title("SECTORS", "meeting"))
 	for dept in Departments.ORDER:
 		var row = _row_panel()
 		row.mouse_default_cursor_shape = CURSOR_POINTING_HAND
@@ -1027,6 +1053,84 @@ func _build_departments_panel():
 			v.add_child(auto)
 			_legend_rows[dept]["autonomy"] = buttons
 			_legend_rows[dept]["autonomy_desc"] = desc
+	# MOTHER (Chapter III and after): the machines' factions and the shutdown switch.
+	_mother_row = _row_panel()
+	_mother_row.visible = false
+	var mh = HBoxContainer.new()
+	mh.add_theme_constant_override("separation", 8)
+	_mother_row.add_child(mh)
+	var mv = VBoxContainer.new()
+	mv.add_theme_constant_override("separation", 2)
+	mv.size_flags_horizontal = SIZE_EXPAND_FILL
+	mh.add_child(mv)
+	var mtitle = _label("MOTHER", 15)
+	mtitle.add_theme_font_override("font", Ui.bold())
+	mv.add_child(mtitle)
+	_mother_label = _label("", 12, MUTED)
+	_mother_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_mother_label.custom_minimum_size = Vector2(LEFT_W - 150, 0)
+	mv.add_child(_mother_label)
+	_mother_button = _button("Shut MOTHER down")
+	_mother_button.size_flags_vertical = SIZE_SHRINK_CENTER
+	_mother_button.pressed.connect(_on_mother_button)
+	mh.add_child(_mother_button)
+	v.add_child(_mother_row)
+	# Endings (Chapter IV and after): the four ways this ends and what each still needs.
+	_endings_box = VBoxContainer.new()
+	_endings_box.add_theme_constant_override("separation", 3)
+	_endings_box.visible = false
+	_endings_box.add_child(_title("ENDINGS", "command"))
+	for i in 4:
+		var row = VBoxContainer.new()
+		row.add_theme_constant_override("separation", 0)
+		var name_l = _label("", 13)
+		name_l.add_theme_font_override("font", Ui.bold())
+		row.add_child(name_l)
+		var need = _label("", 11, MUTED)
+		need.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		need.custom_minimum_size = Vector2(LEFT_W - 60, 0)
+		row.add_child(need)
+		_endings_box.add_child(row)
+		_endings_rows.append({"name": name_l, "need": need})
+	v.add_child(_endings_box)
+
+
+# Two presses: the first asks for confirmation, the second shuts MOTHER down (economy).
+func _on_mother_button():
+	if not _mother_confirm:
+		_mother_confirm = true
+		_mother_button.text = "Confirm shutdown"
+		return
+	_mother_confirm = false
+	_mother_button.text = "Shut MOTHER down"
+	colony_command.emit({"type": "colony.shutdown_mother"})
+
+
+func _render_mother_and_endings():
+	if _mother_row == null:
+		return
+	var story = _colony_view.get("story", {})
+	var chapter = str(story.get("chapter", "I"))
+	var late = chapter == "III" or chapter == "IV"
+	_mother_row.visible = late
+	if late:
+		var fac = _colony_view.get("machines", {}).get("factions", {})
+		var down = story.get("motherDown", false)
+		_mother_button.visible = not down
+		if down:
+			_mother_label.text = "Down. Machines: %d yours, %d independent. Autonomy capped at Supervised, efficiency ×0.8, half the compute." % [int(fac.get("yours", 0)), int(fac.get("independent", 0))]
+		else:
+			_mother_label.text = "Influence %d. Machines: %d yours, %d MOTHER's, %d independent. Shutting MOTHER down: influence −40, trust +5, but no orchestrator." % [int(round(float(_colony_view.get("influence", 0)))), int(fac.get("yours", 0)), int(fac.get("mother", 0)), int(fac.get("independent", 0))]
+	var endings = story.get("endings", [])
+	_endings_box.visible = (chapter == "IV" or story.get("ending") != null) and endings.size() == _endings_rows.size()
+	if _endings_box.visible:
+		for i in endings.size():
+			var e = endings[i]
+			var rowv = _endings_rows[i]
+			var reached = story.get("ending") == e.get("id")
+			rowv["name"].text = str(e.get("name", "")) + ("  ·  reached" if reached else ("  ·  met" if e.get("met", false) else ""))
+			rowv["name"].add_theme_color_override("font_color", Ui.GOOD if reached or e.get("met", false) else TEXT)
+			rowv["need"].text = "Needs: " + str(e.get("missing", "")) if str(e.get("missing", "")) != "" else ""
 
 
 # Layout departments -> the economy's autonomy departments (Commons has no machines of its own).
@@ -1060,7 +1164,7 @@ func _update_legend():
 		for a in _layout.get("agents", []):
 			if Departments.of_building(_layout, a.get("home", "command_centre")) == dept:
 				na += 1
-		_legend_rows[dept].count.text = "%d building%s · %d agent%s" % [nb, "" if nb == 1 else "s", na, "" if na == 1 else "s"]
+		_legend_rows[dept].count.text = "%d building%s · %d machine%s" % [nb, "" if nb == 1 else "s", na, "" if na == 1 else "s"]
 
 
 # ---------- right column: agents ----------
@@ -1077,7 +1181,7 @@ func _build_roster():
 	var v = VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
 	p.add_child(v)
-	var head = _title("AGENTS", "agent")
+	var head = _title("MACHINES", "agent")
 	_roster_title = head.get_meta("label")
 	v.add_child(head)
 	# Scrolls once the cards no longer fit above the bottom panels (_fit_roster).
@@ -1111,7 +1215,7 @@ func _regroup_roster():
 		for id in members:
 			_roster.move_child(_cards[id].panel, idx)
 			idx += 1
-	_roster_title.text = "AGENTS  %d" % _cards.size()
+	_roster_title.text = "MACHINES  %d" % _cards.size()
 
 
 func _make_dept_header(dept: String) -> Dictionary:
@@ -1146,6 +1250,8 @@ func _make_card(a):
 	name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_l.custom_minimum_size = Vector2(90, 0)
 	head.add_child(name_l)
+	var faction = _label("", 11, MUTED)  # Chapter III+: whose side this machine is on
+	head.add_child(faction)
 	var state = _label("", 12)
 	head.add_child(state)
 	v.add_child(head)
@@ -1165,7 +1271,7 @@ func _make_card(a):
 	)
 	card.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 	_roster.add_child(card)
-	var view = {"panel": card, "state": state, "task": task, "bar": bar, "name": name_l, "portrait": pv}
+	var view = {"panel": card, "state": state, "task": task, "bar": bar, "name": name_l, "portrait": pv, "faction": faction}
 	_load_agent_portrait(pv, id, 96)
 	return view
 
@@ -1573,6 +1679,15 @@ func set_story(story, events):
 			var path = p
 			b.pressed.connect(func(): colony_command.emit({"type": "colony.path", "path": path}))
 			_story_actions.add_child(b)
+	elif str(card.get("key", "")).begins_with("ending"):
+		var keep = _button("Keep playing")
+		keep.pressed.connect(func():
+			colony_command.emit({"type": "colony.set_speed", "speed": 1})
+			_dismiss_story())
+		_story_actions.add_child(keep)
+		var fresh = _button("New colony", true)
+		fresh.pressed.connect(func(): colony_command.emit({"type": "layout.reset"}))
+		_story_actions.add_child(fresh)
 	elif card.get("key", "") == "unordered" and events.get("unordered") != null:
 		var recall = _button("Recall it", true)
 		recall.pressed.connect(func(): colony_command.emit({"type": "colony.unordered", "recall": true}))
@@ -1814,7 +1929,7 @@ func _refresh_approval():
 	_approval_id = pending["id"]
 	var who = pending.get("agentId")
 	_approval_text.text = (
-		"%s asks: %s" % [_agent_name(who) if who != null else "An agent", pending.get("summary", "")]
+		"%s asks: %s" % [_agent_name(who) if who != null else "A machine", pending.get("summary", "")]
 	)
 	_approval_panel.visible = true
 

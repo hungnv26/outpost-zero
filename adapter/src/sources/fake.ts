@@ -199,14 +199,14 @@ export class FakeSource implements Source {
     w.setAgent("reviewer", { state: "approval", detail: "Needs your sign-off to publish" });
     w.setAgent("writer", { state: "idle" });
     w.setAgent("commander", { state: "waiting", detail: "Waiting for your approval" });
-    w.logLine("Reviewer is waiting for your approval at Human Approval.", "warn", "reviewer");
+    w.logLine("Reviewer is waiting for your approval at the Oversight Post.", "warn", "reviewer");
     const approved = await this.awaitApproval(approvalId, signal);
     w.upsertApproval({ id: approvalId, status: approved ? "approved" : "rejected" });
 
     if (!approved) {
       w.upsertTask({ id: t("review"), status: "failed", result: "Rejected by human" });
       w.setAgent("reviewer", { state: "complete", detail: "Report rejected" });
-      w.updateMission({ status: "failed", result: "The report was rejected at Human Approval." });
+      w.updateMission({ status: "failed", result: "The report was rejected at the Oversight Post." });
       w.logLine("Report rejected. Mission closed.", "warn");
     } else {
       w.upsertTask({ id: t("review"), status: "done", result: "Approved" });

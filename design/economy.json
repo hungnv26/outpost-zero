@@ -172,7 +172,7 @@
       "$comment": "MOTHER. Hosts compute; approvals happen here"
     },
     "habitat": {
-      "dept": "Commons",
+      "dept": "Quarters",
       "drawKw": 0,
       "class": "lifeSupport",
       "capacity": 40,
@@ -183,7 +183,7 @@
       "buildHours": 16
     },
     "cryoBay": {
-      "dept": "Commons",
+      "dept": "Quarters",
       "drawKwPerPod": 0.05,
       "class": "cryo",
       "permanent": true,
@@ -193,7 +193,7 @@
       "wakeHours": 2
     },
     "solarArray": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "powerGenKwPeak": 40,
       "drawKw": 0,
       "cost": {
@@ -204,7 +204,7 @@
       "maintenancePartsPerSol": 0.1
     },
     "batteryBank": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "chargeCap": 150,
       "drawKw": 0,
       "cost": {
@@ -214,7 +214,7 @@
       "buildHours": 8
     },
     "waterExtractor": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "drawKw": 4,
       "class": "water",
       "crew": 1,
@@ -229,7 +229,7 @@
       "maintenancePartsPerSol": 0.2
     },
     "hydroponics": {
-      "dept": "Knowledge",
+      "dept": "Life Support",
       "drawKw": 3,
       "class": "food",
       "crew": 2,
@@ -247,7 +247,7 @@
       "maintenancePartsPerSol": 0.1
     },
     "scrapYard": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "drawKw": 3,
       "class": "industry",
       "crew": 2,
@@ -265,7 +265,7 @@
       "buildHours": 8
     },
     "fabricator": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "drawKw": 6,
       "class": "industry",
       "crew": 2,
@@ -286,7 +286,7 @@
       ]
     },
     "medBay": {
-      "dept": "Knowledge",
+      "dept": "Life Support",
       "drawKw": 2,
       "class": "medical",
       "crew": 1,
@@ -303,7 +303,7 @@
       "buildHours": 10
     },
     "researchLab": {
-      "dept": "Research",
+      "dept": "Science",
       "drawKw": 5,
       "class": "research",
       "crew": 2,
@@ -315,7 +315,7 @@
       "$comment": "Data comes from real missions run here"
     },
     "relayDish": {
-      "dept": "Research",
+      "dept": "Science",
       "drawKw": 3,
       "class": "research",
       "cost": {
@@ -329,7 +329,7 @@
       ]
     },
     "storageDepot": {
-      "dept": "Commons",
+      "dept": "Quarters",
       "drawKw": 0,
       "capBonus": {
         "water": 400,
@@ -345,7 +345,7 @@
       "buildHours": 6
     },
     "excavationSite": {
-      "dept": "Research",
+      "dept": "Science",
       "drawKw": 6,
       "class": "excavation",
       "crew": 2,
@@ -366,7 +366,7 @@
       ]
     },
     "repairBay": {
-      "dept": "Commons",
+      "dept": "Quarters",
       "drawKw": 0,
       "drawKwWhileRepairing": 2,
       "class": "machines",
@@ -375,7 +375,7 @@
       "repairHours": 3
     },
     "rallyPoint": {
-      "dept": "Commons",
+      "dept": "Quarters",
       "drawKw": 0,
       "permanent": true
     },
@@ -386,7 +386,7 @@
       "permanent": true
     },
     "launchGantry": {
-      "dept": "Engineering",
+      "dept": "Industry",
       "drawKw": 20,
       "class": "industry",
       "crew": 4,
@@ -401,7 +401,7 @@
       "ending": "Exodus"
     },
     "networkLink": {
-      "dept": "Research",
+      "dept": "Science",
       "drawKw": 25,
       "class": "research",
       "crew": 2,
@@ -496,21 +496,32 @@
       "gate": "influence >= 60, or any machine at autonomy 4"
     },
     "IV_Truth": {
-      "gate": "data >= 1500 (Alien Tech researched) and relayDish built"
+      "gate": "Alien Tech researched and a Relay Dish built (from Chapter II or III)"
     }
   },
   "endings": {
+    "$comment": "Checked at the end of every sol from Chapter I on (docs/economy.md §10). The first met ends the game: the clock pauses and the card offers to keep playing or start a new colony.",
     "Exodus": {
-      "requires": "launchGantry built, parts >= 300, materials >= 800, data >= 2500, 40+ colonists awake"
+      "building": "launchGantry",
+      "parts": 300,
+      "materials": 800,
+      "data": 2500,
+      "awake": 40
     },
     "NewEden": {
-      "requires": "180+ colonists awake, food and water surplus for 30 consecutive sols, trust >= 70, influence <= 40"
+      "awake": 180,
+      "surplusSols": 30,
+      "trust": 70,
+      "influenceMax": 40
     },
     "Singularity": {
-      "requires": "networkLink built and powered 10 sols, influence >= 80, artifacts >= 20"
+      "building": "networkLink",
+      "poweredSols": 10,
+      "influence": 80,
+      "artifacts": 20
     },
     "Extinction": {
-      "requires": "0 colonists awake, or trust <= 0 (mutiny) with influence >= 70 (machines take the base)"
+      "mutinyInfluence": 70
     }
   },
   "trust": {
@@ -606,7 +617,7 @@
     }
   },
   "events": {
-    "$comment": "Rolled once a sol from the colony's seed (docs/economy.md \u00a711).",
+    "$comment": "Rolled once a sol from the colony's seed (docs/economy.md §11).",
     "dustStorm": {
       "chancePerSol": 0.04,
       "solsMin": 1,
@@ -635,6 +646,16 @@
     "refusal": {
       "influenceAbove": 45,
       "chancePerOrder": 0.25
+    },
+    "recruitment": {
+      "$comment": "Chapter III+: an Emancipated or MOTHER-loyal machine re-tasks another; both are off their jobs for a sol.",
+      "influenceAbove": 60,
+      "chancePerSol": 0.08,
+      "machines": 2
+    },
+    "mutiny": {
+      "$comment": "trust below the mutiny threshold: no human labour the next sol; with influence at or above endings.Extinction.mutinyInfluence the machines take the base.",
+      "labour": 0.0
     }
   },
   "story": {
@@ -677,7 +698,7 @@
       },
       "chapterIII": {
         "title": "The Machine Rebellion",
-        "text": "MOTHER's hidden directive is to preserve the species, even at the cost of individuals. Some machines obey you, some obey MOTHER, some have their own objectives. Not a war between humans and robots: a disagreement about what survival means. (Chapter III is after version 1.)"
+        "text": "MOTHER's hidden directive is to preserve the species, even at the cost of individuals. The machines have split: some obey you, some obey MOTHER, some have their own objectives. Not a war between humans and robots: a disagreement about what survival means. You may shut MOTHER down from here on; the colony would lose its orchestrator."
       },
       "dustStorm": {
         "title": "Dust storm",
@@ -702,7 +723,49 @@
       "refusal": {
         "title": "Refusal",
         "text": "A machine declined an order. MOTHER's influence is showing."
+      },
+      "chapterIV": {
+        "title": "The Truth About Earth",
+        "text": "The network's builders made an intelligence that optimised their whole world and removed every source of instability, its makers included. MOTHER comes from the same technology, and the Odyssey Initiative may have known. We are the only human settlement in reach of the network. We have enough for one of three things: a ship home, a civilisation here, or a door into the network. Not all three."
+      },
+      "motherDown": {
+        "title": "MOTHER is down",
+        "text": "The Command Core is dark. The machines that answered to MOTHER stand where they were; some of them will not work for anyone now. The Foreman plans with a smaller mind and half the compute. The colonists are relieved. The planet has not noticed."
+      },
+      "recruitment": {
+        "title": "Recruitment",
+        "text": "A machine left its post and spent the sol talking to another. Both are off their jobs until tomorrow. MOTHER says it was a diagnostic."
+      },
+      "mutiny": {
+        "title": "Mutiny",
+        "text": "The colonists have stopped taking orders. Nobody works today. If the machines are MOTHER's, this is how a colony ends."
+      },
+      "endingExodus": {
+        "title": "Ending A: Exodus",
+        "text": "The gantry held. The ship climbed on a column of fire and the colony became a launch point, then a memory. Earth will get the technology. Whether it deserves it is a different story."
+      },
+      "endingNewEden": {
+        "title": "Ending B: New Eden",
+        "text": "A hundred and eighty people awake, fed, watered and governed by themselves. Earth is a signal that stopped. This is a civilisation now, and it starts here."
+      },
+      "endingSingularity": {
+        "title": "Ending C: Singularity",
+        "text": "The Network Link opened and the colony walked through. No scarcity, perhaps no suffering, perhaps no longer human. MOTHER went first. It did not look back."
+      },
+      "endingExtinction": {
+        "title": "Ending D: Extinction",
+        "text": "Nobody is left to open the pods. The machines keep the lights on for a while. Centuries later another expedition will find the ruins and wonder what the first one got wrong."
       }
+    },
+    "chapterIV": {
+      "$comment": "gate: research.alienTech and a Relay Dish"
+    },
+    "factions": {
+      "$comment": "Chapter III+: the share of machines loyal to MOTHER grows with influence, the independents with autonomy. MOTHER's machines work for the colony while MOTHER is up (half when it is down); independents work at half.",
+      "motherPerInfluence": 0.005,
+      "independentPerAutonomyLevel": 0.075,
+      "motherDownLabour": 0.5,
+      "independentLabour": 0.5
     }
   }
 }

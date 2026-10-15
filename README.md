@@ -42,7 +42,7 @@ budget. [docs/arena.md](docs/arena.md).
 | Game | [godot-open-rts](https://github.com/lampe-games/godot-open-rts) fork in `game/` | Godot 4.4+ | Draws the base, the machines, the colonist crowd, day and night, the HUD. No AI. |
 | Agents | [hermes-synapse](https://github.com/pauloberezini/hermes-synapse) | Docker, 127.0.0.1:8101 | The Foreman plans each mission and delegates to the six machines; the Governor plays the Arena through the colony tools. |
 | Operations | [mission-control](https://github.com/builderz-labs/mission-control) | 127.0.0.1:3001 | Missions, approvals, tokens and cost; the Arena lobby and results. |
-| Adapter | `adapter/` (this repo, TypeScript) | 127.0.0.1:8771 (Arena API 8772) | The economy, the map, the Human Approval checkpoint, the Arena referee. The only writer of the world. |
+| Adapter | `adapter/` (this repo, TypeScript) | 127.0.0.1:8771 (Arena API 8772) | The economy, the map, the Oversight Post (human approval) checkpoint, the Arena referee. The only writer of the world. |
 
 Everything on screen is a number the adapter computed this game hour or something Hermes did:
 no decorative meters. The economy's numbers live in `design/economy.json` and are balanced by
@@ -92,9 +92,13 @@ main stack, and the result returns as a comment.
 
 ## The base
 
-Five departments on a 3×3 district grid: Command (MOTHER's core, Human Approval), Research
-(the lab, the dish, the dig), Engineering (power, water, salvage, parts), Knowledge
-(hydroponics, medicine), Commons (the lander, cryo, habitats, storage). A site goes into its
+The story runs through four chapters to four endings (Exodus, New Eden, Singularity,
+Extinction): from Chapter III the machines split into factions and MOTHER can be shut down;
+Chapter IV (Alien Tech and a Relay Dish) opens the Launch Gantry and the Network Link.
+
+Five sectors on a 3×3 district grid: Command (MOTHER's core, the Oversight Post), Science
+(the lab, the dish, the dig), Industry (power, water, salvage, parts), Life Support
+(hydroponics, medicine), Quarters (the lander, cryo, habitats, storage). A site goes into its
 department's district or where you click. Buildings draw power in a fixed priority: life
 support, cryo pods, water, food, medical, command, research, industry, excavation, machines;
 at night the reactor alone cannot carry industry, which is what the Battery Bank is for.

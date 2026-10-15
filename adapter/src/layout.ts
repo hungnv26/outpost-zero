@@ -83,7 +83,7 @@ export const KIND_MODEL: Record<string, string> = {
   excavationSite: "drill_structure", networkLink: "machine_wireless",
 };
 export const KIND_LABEL: Record<string, string> = {
-  landingModule: "Landing Module", commandCore: "Command Core", humanApproval: "Human Approval", cryoBay: "Cryo Bay",
+  landingModule: "Landing Module", commandCore: "Command Core", humanApproval: "Oversight Post", cryoBay: "Cryo Bay",
   habitat: "Habitat", storageDepot: "Storage Depot", solarArray: "Solar Array", batteryBank: "Battery Bank",
   waterExtractor: "Water Extractor", scrapYard: "Scrap Yard", fabricator: "Fabricator", launchGantry: "Launch Gantry",
   hydroponics: "Hydroponics Bay", medBay: "Med Bay", researchLab: "Research Lab", relayDish: "Relay Dish",
@@ -121,23 +121,24 @@ export const VEHICLE_MODELS = [
 ];
 
 // ---- departments and districts ----
-// Every building belongs to a department (its capability; Human Approval sits with Command)
+// Every building belongs to a department (its capability; the Oversight Post sits with Command)
 // and every character to its home building's department. The map is a 3x3 grid of districts
 // separated by streets; each district has 2x2 building slots on a 7-unit lattice, which
 // leaves room around every building for its characters to park.
 //
-//   Research   | Commons (Rally Point) | Engineering
-//   Research   | Command + Approval    | Engineering
-//   Knowledge  | Knowledge             | Commons (Repair Bay)
+//   Science       | Quarters (Rally Point) | Industry
+//   Science       | Command + Oversight    | Industry
+//   Life Support  | Life Support           | Quarters (Repair Bay)
+// The keys are the Hermes capabilities (stable ids); the names are the colony's sectors.
 
 export type Department = "command" | "research" | "code" | "knowledge" | "meeting";
 
 export const DEPARTMENTS: Record<Department, { name: string; color: string }> = {
   command: { name: "Command", color: "#b48cff" },
-  research: { name: "Research", color: "#4fb3ff" },
-  code: { name: "Engineering", color: "#ff9940" },
-  knowledge: { name: "Knowledge", color: "#5fd98a" },
-  meeting: { name: "Commons", color: "#ff7fae" },
+  research: { name: "Science", color: "#4fb3ff" },
+  code: { name: "Industry", color: "#ff9940" },
+  knowledge: { name: "Life Support", color: "#5fd98a" },
+  meeting: { name: "Quarters", color: "#ff7fae" },
 };
 
 export function departmentOf(capability: Capability): Department {
@@ -230,7 +231,7 @@ export const DEFAULT_LAYOUT: BaseLayout = organiseLayout({
   // The crash site: MOTHER's core, the checkpoint, the wrecked lander, the cryo pods and one habitat.
   buildings: [
     { id: "command_centre", label: "Command Core", x: 16, z: 16, model: "CommandCenter", color: "#66ccff", capability: "command", builtin: true, kind: "commandCore", status: "built" },
-    { id: "human_approval", label: "Human Approval", x: 25.5, z: 25.5, model: "gate_complex", color: "#d98cff", capability: "approval", builtin: true, kind: "humanApproval", status: "built" },
+    { id: "human_approval", label: "Oversight Post", x: 25.5, z: 25.5, model: "gate_complex", color: "#d98cff", capability: "approval", builtin: true, kind: "humanApproval", status: "built" },
     { id: "landing_module", label: "Landing Module", x: 16, z: 6, model: "lander_A", color: "#ff7fae", capability: "meeting", builtin: true, kind: "landingModule", status: "built" },
     { id: "cryo_bay", label: "Cryo Bay", x: 20, z: 6, model: "containers_A", color: "#ff7fae", capability: "meeting", builtin: true, kind: "cryoBay", status: "built" },
     { id: "habitat", label: "Habitat", x: 26, z: 26, model: "HouseLong", color: "#ff7fae", capability: "meeting", builtin: true, kind: "habitat", status: "built" },
@@ -272,6 +273,8 @@ export function loadLayout(path: string): BaseLayout {
     for (const a of DEFAULT_LAYOUT.agents) if (!l.agents.some((x) => x.id === a.id)) l.agents.push(structuredClone(a));
     for (const s of DEFAULT_LAYOUT.spots) if (!l.spots.some((x) => x.id === s.id)) l.spots.push(structuredClone(s));
     if (!TERRAINS.includes(l.terrain)) l.terrain = DEFAULT_LAYOUT.terrain;
+    // Labels from the Agent RTS era on an older save take the colony's names.
+    for (const b of l.buildings) if (b.id === "human_approval" && b.label === "Human Approval") b.label = KIND_LABEL.humanApproval;
     // A base saved on the older, smaller map is laid out again on the current one.
     if (l.size !== MAP_SIZE) {
       l.size = MAP_SIZE;

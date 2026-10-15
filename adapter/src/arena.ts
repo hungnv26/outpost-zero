@@ -7,7 +7,7 @@ import type { ArenaInfo, BaseOnMap, ScoreEntry, ServerMessage } from "./contract
 import type { World } from "./world.ts";
 
 export type Mode = "race" | "timed";
-export type Objective = "awakening" | "foothold";
+export type Objective = "awakening" | "foothold" | "ending";
 
 export interface MatchConfig {
   mode: Mode;
@@ -60,9 +60,10 @@ export interface MatchState {
 export const OBJECTIVES: Record<Objective, { name: string; check: (c: Colony) => boolean; describe: string }> = {
   awakening: { name: "Awakening", check: (c) => c.state.awake >= 100, describe: "100 colonists awake" },
   foothold: { name: "Foothold", check: (c) => c.state.awake >= 60 && c.state.shortSols.food === 0 && c.state.shortSols.water === 0 && c.state.stocks.food > 300 && c.state.stocks.water > 300, describe: "60 awake and fed and watered with reserves" },
+  ending: { name: "Ending", check: (c) => !!c.state.story.ending && c.state.story.ending !== "Extinction", describe: "reach Exodus, New Eden or Singularity" },
 };
 
-export const TOOLS = ["colony_state", "colony_build", "colony_cancel_build", "colony_toggle", "colony_wake", "colony_autonomy", "colony_research", "colony_repair", "colony_study", "colony_note", "colony_path"] as const;
+export const TOOLS = ["colony_state", "colony_build", "colony_cancel_build", "colony_toggle", "colony_wake", "colony_autonomy", "colony_research", "colony_repair", "colony_study", "colony_note", "colony_path", "colony_shutdown_mother"] as const;
 
 // Colony value (docs/arena.md §6).
 export function colonyValue(c: Colony): number {
@@ -168,7 +169,7 @@ export class Arena extends EventEmitter {
     if (this.match?.status === "running") throw new ColonyError("a match is already running");
     const config: MatchConfig = {
       mode: cfg.mode === "race" ? "race" : "timed",
-      objective: cfg.objective === "foothold" ? "foothold" : "awakening",
+      objective: cfg.objective === "foothold" ? "foothold" : cfg.objective === "ending" ? "ending" : "awakening",
       sols: Math.max(1, Math.min(200, Math.floor(cfg.sols ?? 30))),
       tokenBudget: Math.max(10_000, Math.floor(cfg.tokenBudget ?? 2_000_000)),
       seed: Math.floor(cfg.seed ?? 4217),
@@ -306,6 +307,8 @@ export class Arena extends EventEmitter {
       }
       case "colony_path":
         return r.command((c) => c.choosePath(str("path")));
+      case "colony_shutdown_mother":
+        return r.command((c) => c.shutdownMother());
       case "colony_note": {
         const text = str("text").trim().slice(0, 120);
         if (!text) throw new ColonyError("empty note");
@@ -344,6 +347,7 @@ export class Arena extends EventEmitter {
     if (match.config.mode === "race" && obj.check(this.colony)) this.finish(`${obj.name}: ${obj.describe}`, true);
     else if (v.sol >= match.config.sols) this.finish(match.config.mode === "race" ? `time is up without ${obj.name}` : `${match.config.sols} sols played`, match.config.mode === "timed");
     else if (this.colony.state.awake === 0) this.finish("the colony died", false);
+    else if (this.colony.state.story.ending) this.finish(`${this.colony.state.story.ending} ending`, this.colony.state.story.ending !== "Extinction");
   }
 
   private finish(reason: string, achieved: boolean): MatchResult {

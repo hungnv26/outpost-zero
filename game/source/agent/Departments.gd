@@ -1,25 +1,27 @@
 extends RefCounted
 
-# Departments organise the base: every building belongs to one (its capability; Human
+# Sectors on screen, departments in the code: they organise the base: every building belongs to one (its capability; Human
 # Approval sits with Command) and every character to its home building's. The map is a
 # 3x3 grid of districts split by streets. Mirrors DEPARTMENTS/DISTRICTS in adapter/src/layout.ts.
 #
-#   Research   | Commons (Rally Point) | Engineering
-#   Research   | Command + Approval    | Engineering
-#   Knowledge  | Knowledge             | Commons (Repair Bay)
+#   Science       | Quarters (Rally Point) | Industry
+#   Science       | Command + Oversight    | Industry
+#   Life Support  | Life Support           | Quarters (Repair Bay)
+# The keys (command, research, code, knowledge, meeting) are the Hermes capabilities and stay;
+# only the names on screen are the colony's sectors.
 
 const ORDER = ["command", "research", "code", "knowledge", "meeting"]
-const NAMES = {"command": "Command", "research": "Research", "code": "Engineering", "knowledge": "Knowledge", "meeting": "Commons"}
+const NAMES = {"command": "Command", "research": "Science", "code": "Industry", "knowledge": "Life Support", "meeting": "Quarters"}
 const COLORS = {
 	"command": Color("#b48cff"), "research": Color("#4fb3ff"), "code": Color("#ff9940"),
 	"knowledge": Color("#5fd98a"), "meeting": Color("#ff7fae"),
 }
 const WORK = {
-	"command": "Plans missions; you approve risky steps here",
-	"research": "Web search, news and sources",
-	"code": "Code, data and calculations",
-	"knowledge": "Notes, analysis and writing",
-	"meeting": "Shared spaces: meetings, waiting, repairs",
+	"command": "MOTHER's core; the Warden waits for your decisions here",
+	"research": "The lab, the dish and the dig: expeditions and research",
+	"code": "Power, water, salvage and parts: the colony's machinery",
+	"knowledge": "Hydroponics and medicine: what keeps the colonists alive",
+	"meeting": "The lander, the cryo pods, habitats, storage, the muster and repair spots",
 }
 const DISTRICTS = [
 	["research", "meeting", "code"],

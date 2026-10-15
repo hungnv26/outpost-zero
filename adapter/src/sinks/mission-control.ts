@@ -292,7 +292,7 @@ export class MissionControlSink {
         this.approvalTask.set(id, pending.id);
         await this.comment(
           id,
-          "Waiting for human approval in Outpost Zero. Approve this task here (quality review → approve) or in the game at the Human Approval building.",
+          "Waiting for human approval in Outpost Zero. Approve this task here (quality review → approve) or in the game at the Oversight Post.",
         );
       }
     }

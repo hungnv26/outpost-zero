@@ -9,7 +9,7 @@ export interface HermesOptions {
   baseUrl: string; // http://127.0.0.1:8000
   token: string; // Hermes accepts the built-in dev token for local use
   orchestratorId?: string; // "jarvis"
-  requireApproval?: boolean; // hold the final report at Human Approval
+  requireApproval?: boolean; // hold the final report at the Oversight Post
   costBudgetUsd?: number | null;
   missionTimeoutMs?: number;
 }
@@ -136,8 +136,8 @@ export class HermesSource implements Source {
     } else {
       w.upsertTask({ id: taskId, status: "failed", result: "Rejected" });
       w.setAgent("reviewer", { state: "complete", detail: "Report rejected" });
-      w.updateMission({ status: "failed", result: `**Rejected at Human Approval.** Draft below.\n\n${run.draft ?? ""}` });
-      w.logLine("Report rejected at Human Approval.", "warn");
+      w.updateMission({ status: "failed", result: `**Rejected at the Oversight Post.** Draft below.\n\n${run.draft ?? ""}` });
+      w.logLine("Report rejected at the Oversight Post.", "warn");
     }
     this.finish(run, 3000);
   }
@@ -186,7 +186,7 @@ export class HermesSource implements Source {
     });
     w.setAgent("reviewer", { state: "approval", taskId, taskTitle: "Human approval of the final report", detail: "Waiting for your sign-off" });
     w.setAgent("commander", { state: "waiting", detail: "Waiting for your approval" });
-    w.logLine("The Reviewer is waiting for your approval at Human Approval.", "warn", "reviewer");
+    w.logLine("The Reviewer is waiting for your approval at the Oversight Post.", "warn", "reviewer");
   }
 
   private fail(run: Run, reason: string, content?: string) {

@@ -235,6 +235,17 @@ the other teams' bases read-only in every window (docs/arena.md §8b). The direc
 refuses uneven colony clocks. Evidence: a 2-sol duel on `duel`, both windows captured with
 `--camera-at`/`--camera-size`, winner and Elo recorded.
 
+### After the plan: Chapters III and IV, the endings — DONE 2026-10-15
+
+docs/economy.md §10–§13: factions by influence and autonomy (`Colony.factionOf`, stable from
+the seed), MOTHER's shutdown with its costs, the Chapter IV gate, recruitment and mutiny
+events, the four endings checked every sol with the clock pausing on the first met, the Arena
+objective `ending` and the Governor's tool. HUD: faction tags on the machine cards, MOTHER's
+row with a two-press shutdown in the Sectors tab, the endings' progress from Chapter IV, the
+ending card (keep playing or new colony). 38 adapter tests. Same day, at the user's request,
+the Agent RTS era names left the screen (sectors: Command, Science, Industry, Life Support,
+Quarters; machines, Oversight Post, Dispatch); the ids and capability keys stayed.
+
 ## 6. Milestones
 
 | Milestone | Phases | What you can show |

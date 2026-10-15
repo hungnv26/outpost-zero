@@ -62,9 +62,24 @@ export interface EconomyDefs {
     illness: { chancePerColonistWhenThirsty: number; medicinePerSol: number; deathChanceWithoutMedicine: number; recoverSols: number };
     unorderedTask: { influenceAbove: number; chancePerMachine: number; influenceIfLet: number; influenceIfRecalled: number };
     refusal: { influenceAbove: number; chancePerOrder: number };
+    recruitment: { influenceAbove: number; chancePerSol: number; machines: number };
+    mutiny: { labour: number };
   };
-  story: { chapterII: { surplusSols: number }; chapterIII: { influence: number }; signalSolsAfterDish: number; cards: Record<string, { title: string; text: string }> };
+  story: {
+    chapterII: { surplusSols: number }; chapterIII: { influence: number }; signalSolsAfterDish: number;
+    factions: { motherPerInfluence: number; independentPerAutonomyLevel: number; motherDownLabour: number; independentLabour: number };
+    cards: Record<string, { title: string; text: string }>;
+  };
+  endings: {
+    Exodus: { building: string; parts: number; materials: number; data: number; awake: number };
+    NewEden: { awake: number; surplusSols: number; trust: number; influenceMax: number };
+    Singularity: { building: string; poweredSols: number; influence: number; artifacts: number };
+    Extinction: { mutinyInfluence: number };
+  };
+  motherShutdown: { influence: number; autonomyCap: number; efficiency: number; computeBudgetFactor: number; trustOnce: number };
 }
+
+export type Faction = "yours" | "mother" | "independent";
 
 export interface StoryCard {
   id: string;
@@ -83,6 +98,11 @@ export interface StoryState {
   dishSols: number;
   cards: StoryCard[];
   nextCard: number;
+  // Chapter III and after (docs/economy.md §10).
+  ending: string | null; // Exodus | NewEden | Singularity | Extinction, once reached
+  endingSol: number | null;
+  motherDown: boolean;
+  linkSols: number; // consecutive sols with a powered Network Link
 }
 
 export interface EventState {
@@ -91,6 +111,8 @@ export interface EventState {
   sick: number;
   sickSols: number;
   unordered: { agent: string | null; solsLeft: number } | null;
+  recruitmentSols: number; // sols left with two machines off their jobs
+  mutinySols: number; // consecutive sols of mutiny (trust below the threshold)
 }
 
 export const DEPTS = ["command", "research", "engineering", "knowledge"] as const;
@@ -159,13 +181,17 @@ export interface ColonyView {
   caps: Partial<Record<Stock, number>>;
   flows: Record<Stock, number>; // net per sol, from the last 24 hours
   colonists: { awake: number; cryo: number; dead: number; beds: number; hungry: boolean; thirsty: boolean; waking: number; striking: boolean };
-  machines: { count: number; efficiency: number; powered: boolean; building: number };
+  machines: { count: number; efficiency: number; powered: boolean; building: number; factions: Record<Faction, number>; factionOf: Record<string, Faction> };
   autonomy: Record<Dept, { level: number; name: string; efficiency: number; computeShare: number; approvals: string }>;
   autonomyLevels: { level: number; name: string; efficiency: number; computeShare: number; approvals: string; influenceDriftPerSol: number }[];
   research: { tiers: string[]; alienTech: boolean; options: { id: string; name: string; cost: number; unlocks: string[]; done: boolean; affordable: boolean }[] };
   compute: { solKTok: number; budgetKTok: number; exhausted: boolean; missions: number; autoMissions: number };
-  story: { chapter: string; path: string | null; signalReceived: boolean; card: StoryCard | null; cards: StoryCard[] };
-  events: { dustStormSols: number; reactorFault: boolean; sick: number; unordered: string | null };
+  story: {
+    chapter: string; path: string | null; signalReceived: boolean; card: StoryCard | null; cards: StoryCard[];
+    ending: string | null; endingSol: number | null; motherDown: boolean;
+    endings: { id: string; name: string; met: boolean; missing: string }[];
+  };
+  events: { dustStormSols: number; reactorFault: boolean; sick: number; unordered: string | null; recruitment: boolean; mutiny: boolean };
   buildings: {
     id: string; type: string; label: string; dept: string; enabled: boolean; powered: boolean; producing: boolean;
     crew: number; crewNeeded: number; drawKw: number; in: Record<string, number>; out: Record<string, number>; permanent: boolean; note: string;
@@ -188,7 +214,7 @@ export function noteOf(type: string): string {
   const notes: Record<string, string> = {
     landingModule: "The wrecked lander's reactor: 30 kW, losing 1% a sol until repaired.",
     commandCore: "MOTHER. Hosts compute and plans missions.",
-    humanApproval: "Where the Warden waits for your decision.",
+    humanApproval: "The Oversight Post: where the Warden waits for your decision.",
     cryoBay: "198 colonists asleep; each pod draws power. Wake them here.",
     habitat: "40 beds. Colonists need one each.",
     storageDepot: "Raises the caps on water, food, salvage, materials and parts.",
@@ -219,6 +245,8 @@ export class Colony {
   events: { text: string; level: "info" | "warn" | "error" }[] = [];
   // Ids of sites finished in the last tick (the runner updates the map).
   completed: string[] = [];
+  // The machines' agent ids (the runner sets them; the simulator has none and uses m0..mN).
+  machineIds: string[] = [];
 
   constructor(defs: EconomyDefs, state?: ColonyState) {
     this.defs = defs;
@@ -242,8 +270,8 @@ export class Colony {
       research: { tiers: [], alienTech: false },
       compute: { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 },
       rngCounter: 0,
-      story: { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1 },
-      events: { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null },
+      story: { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1, ending: null, endingSol: null, motherDown: false, linkSols: 0 },
+      events: { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null, recruitmentSols: 0, mutinySols: 0 },
       stocks,
       trust: s.trust,
       influence: s.influence,
@@ -296,8 +324,102 @@ export class Colony {
   // Machine efficiency: by department, or the mean of the four when no department is given.
   efficiency(dept?: Dept): number {
     const lv = this.defs.machines.autonomyLevels;
-    if (dept) return lv[this.state.autonomy[dept]]?.efficiency ?? 1;
-    return DEPTS.reduce((a, d) => a + (lv[this.state.autonomy[d]]?.efficiency ?? 1), 0) / DEPTS.length;
+    const down = this.state.story.motherDown ? this.defs.motherShutdown.efficiency : 1;
+    if (dept) return (lv[this.state.autonomy[dept]]?.efficiency ?? 1) * down;
+    return (DEPTS.reduce((a, d) => a + (lv[this.state.autonomy[d]]?.efficiency ?? 1), 0) / DEPTS.length) * down;
+  }
+
+  // The sol's compute budget: halved while MOTHER is down (the Foreman plans with a smaller model).
+  budgetKTok(): number {
+    return this.defs.compute.budgetKTokPerSol * (this.state.story.motherDown ? this.defs.motherShutdown.computeBudgetFactor : 1);
+  }
+
+  // ---- factions (Chapter III and after, docs/economy.md §6 and §10) ----
+
+  // Who a machine answers to: MOTHER's share grows with influence, the independents' with
+  // autonomy; the rest are yours. Drawn from the seed and the machine's id, so it is stable.
+  factionOf(id: string): Faction {
+    const s = this.state;
+    if (s.chapter === "I" || s.chapter === "II") return "yours";
+    const f = this.defs.story.factions;
+    const pull = Math.min(0.9, s.influence * f.motherPerInfluence);
+    const mother = s.story.motherDown ? 0 : pull;
+    const avg = DEPTS.reduce((a, d) => a + s.autonomy[d], 0) / DEPTS.length;
+    const independent = Math.min(0.9 - mother, avg * f.independentPerAutonomyLevel + (s.story.motherDown ? pull : 0));
+    let h = s.seed >>> 0;
+    for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x9e3779b1) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x85ebca6b) >>> 0;
+    const x = ((h ^ (h >>> 13)) >>> 0) / 4294967296;
+    return x < mother ? "mother" : x < mother + independent ? "independent" : "yours";
+  }
+
+  factions(): { counts: Record<Faction, number>; of: Record<string, Faction> } {
+    const ids = this.machineIds.length ? this.machineIds : Array.from({ length: this.state.machines }, (_, i) => `m${i}`);
+    const counts: Record<Faction, number> = { yours: 0, mother: 0, independent: 0 };
+    const of: Record<string, Faction> = {};
+    for (const id of ids) {
+      const f = this.factionOf(id);
+      of[id] = f;
+      counts[f]++;
+    }
+    return { counts, of };
+  }
+
+  // How much of the machines' labour the colony gets: MOTHER's machines work while MOTHER
+  // is up (half when it is down), independents work at half, recruited machines not at all.
+  private machineLabourFactor(): number {
+    const s = this.state;
+    if (s.machines === 0) return 1;
+    const f = this.defs.story.factions;
+    const { counts } = this.factions();
+    let working = counts.yours + counts.mother * (s.story.motherDown ? f.motherDownLabour : 1) + counts.independent * f.independentLabour;
+    if (s.events.recruitmentSols > 0) working -= Math.min(s.machines, this.defs.events.recruitment.machines);
+    return Math.max(0, working) / s.machines;
+  }
+
+  // Shutting MOTHER down (Chapter III+): influence falls, trust rises once, and the colony
+  // loses its orchestrator: autonomy capped, efficiency and compute reduced.
+  shutdownMother(): void {
+    const s = this.state;
+    if (s.chapter !== "III" && s.chapter !== "IV") throw new ColonyError("MOTHER can be shut down from Chapter III");
+    if (s.story.motherDown) throw new ColonyError("MOTHER is already down");
+    const m = this.defs.motherShutdown;
+    s.story.motherDown = true;
+    s.influence = Math.max(0, Math.min(100, s.influence + m.influence));
+    s.trust = Math.max(0, Math.min(100, s.trust + m.trustOnce));
+    for (const d of DEPTS) s.autonomy[d] = Math.min(s.autonomy[d], m.autonomyCap);
+    this.card("motherDown");
+  }
+
+  // The four endings (docs/economy.md §10): what each still needs, and whether it is met.
+  endings(): { id: string; name: string; met: boolean; missing: string }[] {
+    const s = this.state;
+    const E = this.defs.endings;
+    const need = (ok: boolean, text: string) => (ok ? null : text);
+    const list = [
+      { id: "Exodus", name: "A: Exodus", checks: [need(this.hasPowered(E.Exodus.building), "a powered Launch Gantry"), need(s.stocks.parts >= E.Exodus.parts, `${E.Exodus.parts} parts`), need(s.stocks.materials >= E.Exodus.materials, `${E.Exodus.materials} materials`), need(s.stocks.data >= E.Exodus.data, `${E.Exodus.data} data`), need(s.awake >= E.Exodus.awake, `${E.Exodus.awake} awake`)] },
+      { id: "NewEden", name: "B: New Eden", checks: [need(s.awake >= E.NewEden.awake, `${E.NewEden.awake} awake`), need(s.story.surplusSols >= E.NewEden.surplusSols, `${E.NewEden.surplusSols} sols of food and water surplus (${s.story.surplusSols} so far)`), need(s.trust >= E.NewEden.trust, `trust ${E.NewEden.trust}`), need(s.influence <= E.NewEden.influenceMax, `influence at most ${E.NewEden.influenceMax}`)] },
+      { id: "Singularity", name: "C: Singularity", checks: [need(s.story.linkSols >= E.Singularity.poweredSols, `a Network Link powered ${E.Singularity.poweredSols} sols running (${s.story.linkSols} so far)`), need(s.influence >= E.Singularity.influence, `influence ${E.Singularity.influence}`), need(s.stocks.artifacts >= E.Singularity.artifacts, `${E.Singularity.artifacts} artifacts`)] },
+      { id: "Extinction", name: "D: Extinction", checks: [need(s.awake === 0 || (s.trust < this.defs.trust.thresholds.mutiny && s.influence >= E.Extinction.mutinyInfluence), "nobody awake, or a mutiny while MOTHER holds the machines")] },
+    ];
+    return list.map((e) => {
+      const missing = e.checks.filter((c): c is string => c !== null);
+      return { id: e.id, name: e.name, met: missing.length === 0, missing: missing.join(", ") };
+    });
+  }
+
+  // The first ending met ends the game: the clock pauses and the card says so. The player
+  // may set the speed again and keep playing; the ending stays on record.
+  private checkEndings(): void {
+    const s = this.state;
+    if (s.story.ending) return;
+    const met = this.endings().find((e) => e.met);
+    if (!met) return;
+    s.story.ending = met.id;
+    s.story.endingSol = this.sol;
+    s.speed = 0;
+    this.card(`ending${met.id}`);
+    this.note(`${met.name}. The clock is paused: keep playing, or start a new colony.`, met.id === "Extinction" ? "error" : "warn");
   }
 
   private maxAutonomy(): number {
@@ -348,6 +470,7 @@ export class Colony {
     s.chapter = ch;
     if (ch === "II") this.card("chapterII", ["exploit", "contain", "communicate"]);
     if (ch === "III") this.card("chapterIII");
+    if (ch === "IV") this.card("chapterIV");
   }
 
   // Resolve the unordered task: recall the machine (it comes back now) or let it finish.
@@ -382,8 +505,9 @@ export class Colony {
   }
 
   // The machines are the real agents on the map (everyone but the Foreman).
-  setMachines(n: number): void {
+  setMachines(n: number, ids?: string[]): void {
     this.state.machines = Math.max(0, Math.floor(n));
+    if (ids) this.machineIds = [...ids].sort();
   }
 
   // Keep the economy's buildings in step with the map: every built building with a kind
@@ -491,6 +615,7 @@ export class Colony {
     if (!DEPTS.includes(dept as Dept)) throw new ColonyError(`unknown department "${dept}"`);
     if (!Number.isInteger(level) || level < 0 || level >= this.defs.machines.autonomyLevels.length) throw new ColonyError("autonomy is 0 to 4");
     if (level === 4 && this.state.chapter !== "III" && this.state.chapter !== "IV") throw new ColonyError("Emancipated machines need Chapter III");
+    if (this.state.story.motherDown && level > this.defs.motherShutdown.autonomyCap) throw new ColonyError(`with MOTHER down, autonomy is capped at ${this.defs.machines.autonomyLevels[this.defs.motherShutdown.autonomyCap].name}`);
     this.state.autonomy[dept as Dept] = level;
     const name = this.defs.machines.autonomyLevels[level].name;
     this.note(`${dept} machines set to ${name} (${level})`, level >= 3 ? "warn" : "info");
@@ -520,7 +645,7 @@ export class Colony {
   }
 
   computeExhausted(): boolean {
-    return this.state.compute.solKTok >= this.defs.compute.budgetKTokPerSol;
+    return this.state.compute.solKTok >= this.budgetKTok();
   }
 
   // MOTHER may spend this much of the sol's compute without being asked (the highest
@@ -598,7 +723,7 @@ export class Colony {
     const striking = s.trust < D.trust.thresholds.strike;
 
     // Labour: humans work their share of the sol (halved on strike); machines are added once we know they have power.
-    let labour = Math.max(0, s.awake - s.events.sick) * (D.colonists.workHoursPerSol / H) * (striking ? 0.5 : 1);
+    let labour = Math.max(0, s.awake - s.events.sick) * (D.colonists.workHoursPerSol / H) * (s.events.mutinySols > 0 ? D.events.mutiny.labour : striking ? 0.5 : 1);
     const buildMachines = s.building ? Math.min(builders ?? 2, s.machines) : 0;
 
     // Power supply.
@@ -637,7 +762,7 @@ export class Colony {
     }
     s.stocks.charge = Math.min(this.cap("charge"), available);
     const machinesPowered = served.has("machines");
-    labour += (s.machines - buildMachines) * eff * (machinesPowered ? 1 : 0.25);
+    labour += (s.machines - buildMachines) * eff * (machinesPowered ? 1 : 0.25) * this.machineLabourFactor();
 
     // Life support and cryo without power.
     if (!served.has("lifeSupport")) {
@@ -749,6 +874,13 @@ export class Colony {
     if (s.shortSols.food >= D.colonists.hungerDeathSols) this.kill(Math.max(1, Math.round(s.awake * 0.05)), "starvation");
     if (s.shortSols.water >= D.colonists.thirstDeathSols) this.kill(Math.max(1, Math.round(s.awake * 0.1)), "thirst");
     if (striking) this.note("the colonists are on strike (trust below 30); human labour halved", "warn");
+    if (s.trust < D.trust.thresholds.mutiny) {
+      if (s.events.mutinySols === 0) this.card("mutiny");
+      s.events.mutinySols++;
+    } else if (s.events.mutinySols > 0) {
+      s.events.mutinySols = 0;
+      this.note("the mutiny is over; the colonists are back at work");
+    }
     s.shortHours = { food: 0, water: 0, air: 0 };
     this.endSolStory(hungry, thirsty);
   }
@@ -777,6 +909,8 @@ export class Colony {
       }
     }
     if (s.chapter === "II" && (s.influence >= D.story.chapterIII.influence || this.maxAutonomy() >= 4)) this.enterChapter("III");
+    // Chapter IV: the truth needs Alien Tech and a dish to hear it with.
+    if ((s.chapter === "II" || s.chapter === "III") && s.research.alienTech && this.count("relayDish") > 0) this.enterChapter("IV");
     if (s.events.dustStormSols > 0) {
       s.events.dustStormSols--;
       if (s.events.dustStormSols === 0) this.note("the dust storm has passed");
@@ -841,6 +975,14 @@ export class Colony {
         }
       }
     }
+    // Recruitment (Chapter III+): a machine re-tasks another; both are off their jobs for a sol.
+    if (s.events.recruitmentSols > 0) s.events.recruitmentSols--;
+    else if ((s.chapter === "III" || s.chapter === "IV") && !s.story.motherDown && s.influence > E.recruitment.influenceAbove && this.roll() < E.recruitment.chancePerSol) {
+      s.events.recruitmentSols = 1;
+      this.card("recruitment");
+    }
+    s.story.linkSols = this.hasPowered("networkLink") ? s.story.linkSols + 1 : 0;
+    this.checkEndings();
   }
 
   // ---- view and persistence ----
@@ -871,7 +1013,7 @@ export class Colony {
         hungry: s.shortHours.food > 0 || s.shortSols.food > 0, thirsty: s.shortHours.water > 0 || s.shortSols.water > 0,
         waking: s.waking?.count ?? 0, striking: s.trust < this.defs.trust.thresholds.strike,
       },
-      machines: { count: s.machines, efficiency: r1(this.efficiency() * 100) / 100, powered: served.has("machines"), building: s.building ? Math.min(2, s.machines) : 0 },
+      machines: { ...(() => { const f = this.factions(); return { factions: f.counts, factionOf: f.of }; })(), count: s.machines, efficiency: r1(this.efficiency() * 100) / 100, powered: served.has("machines"), building: s.building ? Math.min(2, s.machines) : 0 },
       autonomy: Object.fromEntries(DEPTS.map((d) => {
         const lv = this.defs.machines.autonomyLevels[s.autonomy[d]];
         return [d, { level: s.autonomy[d], name: lv?.name ?? "", efficiency: lv?.efficiency ?? 1, computeShare: lv?.computeShare ?? 0, approvals: (lv as { approvals?: string })?.approvals ?? "" }];
@@ -881,9 +1023,9 @@ export class Colony {
         tiers: s.research.tiers, alienTech: s.research.alienTech,
         options: Object.entries(this.defs.research.tiers).map(([id, t]) => ({ id, name: t.name, cost: t.cost, unlocks: t.unlocks, done: id === "alienTech" ? s.research.alienTech : s.research.tiers.includes(id), affordable: s.stocks.data >= t.cost })),
       },
-      compute: { solKTok: r1(s.compute.solKTok), budgetKTok: this.defs.compute.budgetKTokPerSol, exhausted: this.computeExhausted(), missions: s.compute.missions, autoMissions: s.compute.autoMissions },
-      story: { chapter: s.chapter, path: s.story.path, signalReceived: s.story.signalReceived, card: s.story.cards[s.story.cards.length - 1] ?? null, cards: s.story.cards },
-      events: { dustStormSols: s.events.dustStormSols, reactorFault: s.events.reactorFaultSols > 0, sick: s.events.sick, unordered: s.events.unordered?.agent ?? (s.events.unordered ? "a machine" : null) },
+      compute: { solKTok: r1(s.compute.solKTok), budgetKTok: this.budgetKTok(), exhausted: this.computeExhausted(), missions: s.compute.missions, autoMissions: s.compute.autoMissions },
+      story: { chapter: s.chapter, ending: s.story.ending, endingSol: s.story.endingSol, motherDown: s.story.motherDown, endings: this.endings(), path: s.story.path, signalReceived: s.story.signalReceived, card: s.story.cards[s.story.cards.length - 1] ?? null, cards: s.story.cards },
+      events: { recruitment: s.events.recruitmentSols > 0, mutiny: s.events.mutinySols > 0, dustStormSols: s.events.dustStormSols, reactorFault: s.events.reactorFaultSols > 0, sick: s.events.sick, unordered: s.events.unordered?.agent ?? (s.events.unordered ? "a machine" : null) },
       buildings: s.buildings.map((b) => {
         const d = this.defs.buildings[b.type];
         const draws = Boolean(d.class && d.drawKw);
@@ -931,8 +1073,14 @@ export function loadColonyState(path: string): ColonyState | null {
     s.research ??= { tiers: [], alienTech: false };
     s.compute ??= { solKTok: 0, totalKTok: 0, missions: 0, autoMissions: 0 };
     s.rngCounter ??= 0;
-    s.story ??= { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1 };
-    s.events ??= { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null };
+    s.story ??= { path: null, surplusSols: 0, twistDone: false, signalReceived: false, dishSols: 0, cards: [], nextCard: 1, ending: null, endingSol: null, motherDown: false, linkSols: 0 };
+    s.events ??= { dustStormSols: 0, reactorFaultSols: 0, sick: 0, sickSols: 0, unordered: null, recruitmentSols: 0, mutinySols: 0 };
+    s.story.ending ??= null;
+    s.story.endingSol ??= null;
+    s.story.motherDown ??= false;
+    s.story.linkSols ??= 0;
+    s.events.recruitmentSols ??= 0;
+    s.events.mutinySols ??= 0;
     return s;
   } catch {
     return null; // a damaged save starts a new colony
@@ -1046,11 +1194,15 @@ export class ColonyRunner {
   private maybeAutoMission(): void {
     const c = this.colony;
     if (!this.source || c.hourOfSol !== 6) return;
-    const communicate = c.state.story.path === "communicate";
+    // MOTHER acts on its own on the Communicate path, at Autonomous, or once the network holds
+    // the machines (influence at the networkControl threshold, Chapter III+), never while down.
+    const control = (c.state.chapter === "III" || c.state.chapter === "IV") && c.state.influence >= Number(c.defs.influence.thresholds.networkControl ?? 80);
+    const communicate = c.state.story.path === "communicate" || control;
+    if (c.state.story.motherDown) return;
     if (!communicate && c.state.autonomy.command < 3 && c.state.autonomy.research < 3) return;
     if (this.world.getMission()?.status === "planning" || this.world.getMission()?.status === "running") return;
     if (!c.state.buildings.some((b) => b.type === "researchLab" && b.enabled)) return;
-    if (c.state.compute.solKTok >= c.computeShareAllowed() * c.defs.compute.budgetKTokPerSol) return;
+    if (c.state.compute.solKTok >= c.computeShareAllowed() * c.budgetKTok()) return;
     const titles = c.defs.missions.autoMissionTitles;
     const title = titles[this.autoTitle++ % titles.length];
     c.state.compute.autoMissions++;
@@ -1075,7 +1227,8 @@ export class ColonyRunner {
   syncWithLayout(): void {
     const c = this.colony;
     const l = this.world.layout;
-    c.setMachines(l.agents.filter((a) => a.skill !== "orchestrator").length);
+    const machines = l.agents.filter((a) => a.skill !== "orchestrator");
+    c.setMachines(machines.length, machines.map((a) => a.id));
     c.syncBuildings(l);
     // A site the map lost (reset, removal) is abandoned without refund; a site the map
     // still shows but the colony forgot is removed from the map.

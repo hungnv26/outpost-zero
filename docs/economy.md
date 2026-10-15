@@ -83,7 +83,7 @@ life support > cryo pods > water > food > medical > command > research > industr
 ```
 
 Fixed draw at the start: life support 3 kW (1 kW per 10 awake), cryo 9.9 kW, MOTHER's core 4 kW,
-Human Approval 1 kW; the Repair Bay draws 2 kW only while it repairs. That leaves about 12 kW for
+the Oversight Post 1 kW; the Repair Bay draws 2 kW only while it repairs. That leaves about 12 kW for
 everything that grows the colony, which is why the Solar Array (40 kW in daylight) is the second thing to build and the
 Battery Bank the first thing you miss at night. Machines are last in the
 order, so on a short night the robots park at home and the humans crew the lines alone. Waking colonists trades cryo draw for food and
@@ -128,23 +128,23 @@ Costs are materials / parts; build time is in machine-hours with two machines bu
 | Landing Module | Command | gen 30 kW | | reactor, decays 1 %/sol | permanent | |
 | Command Core (MOTHER) | Command | 4 kW | | hosts compute and approvals | permanent | |
 | Human Approval | Command | 1 kW | | the checkpoint | permanent | |
-| Cryo Bay | Commons | 0.05 kW per pod | | wake: 2 medicine, 2 h | permanent | |
-| Habitat | Commons | 0 | | 40 beds | 80 / 6 | 16 h |
-| Repair Bay | Commons | 2 kW while repairing | | repairs: 2 parts, 3 h | permanent | |
-| Rally Point | Commons | 0 | | waiting | permanent | |
-| Storage Depot | Commons | 0 | | caps +400 water, +500 food, +800 salvage, +400 materials, +150 parts | 40 / 2 | 6 h |
-| Solar Array | Engineering | gen 40 kW daylight | | 0.1 parts/sol upkeep | 60 / 10 | 12 h |
-| Battery Bank | Engineering | 0 | | +150 kWh | 40 / 15 | 8 h |
-| Water Extractor | Engineering | 4 kW | 1 | → 5 L | 50 / 8 | 10 h |
-| Scrap Yard | Engineering | 3 kW | 2 | 2 salvage → 1 material + 0.1 part | 30 / 4 | 8 h |
-| Fabricator | Engineering | 6 kW | 2 | 2 materials → 0.5 part | 90 / 12 | 16 h |
-| Hydroponics Bay | Knowledge | 3 kW | 2 | 1 L → 2.5 meals | 70 / 6 | 14 h |
-| Med Bay | Knowledge | 2 kW | 1 | 0.5 material → 0.25 medicine | 50 / 8 | 10 h |
-| Research Lab | Research | 5 kW | 2 | real missions → data | 80 / 14 | 16 h |
-| Relay Dish | Research | 3 kW | | receives deep-space signals (Chapter II) | 60 / 20 | 12 h |
-| Excavation Site | Research | 6 kW | 2 machines | → 0.02 artifact + 1 salvage; +1 influence/sol | 60 / 10 | 12 h, Chapter II |
-| Launch Gantry | Engineering | 20 kW | 4 | the Exodus ending | 400 / 120 | 72 h, Chapter IV |
-| Network Link | Research | 25 kW | 2 machines | the Singularity ending | 200 / 60 + 12 artifacts | 48 h, Chapter IV |
+| Cryo Bay | Quarters | 0.05 kW per pod | | wake: 2 medicine, 2 h | permanent | |
+| Habitat | Quarters | 0 | | 40 beds | 80 / 6 | 16 h |
+| Repair Bay | Quarters | 2 kW while repairing | | repairs: 2 parts, 3 h | permanent | |
+| Rally Point | Quarters | 0 | | waiting | permanent | |
+| Storage Depot | Quarters | 0 | | caps +400 water, +500 food, +800 salvage, +400 materials, +150 parts | 40 / 2 | 6 h |
+| Solar Array | Industry | gen 40 kW daylight | | 0.1 parts/sol upkeep | 60 / 10 | 12 h |
+| Battery Bank | Industry | 0 | | +150 kWh | 40 / 15 | 8 h |
+| Water Extractor | Industry | 4 kW | 1 | → 5 L | 50 / 8 | 10 h |
+| Scrap Yard | Industry | 3 kW | 2 | 2 salvage → 1 material + 0.1 part | 30 / 4 | 8 h |
+| Fabricator | Industry | 6 kW | 2 | 2 materials → 0.5 part | 90 / 12 | 16 h |
+| Hydroponics Bay | Life Support | 3 kW | 2 | 1 L → 2.5 meals | 70 / 6 | 14 h |
+| Med Bay | Life Support | 2 kW | 1 | 0.5 material → 0.25 medicine | 50 / 8 | 10 h |
+| Research Lab | Science | 5 kW | 2 | real missions → data | 80 / 14 | 16 h |
+| Relay Dish | Science | 3 kW | | receives deep-space signals (Chapter II) | 60 / 20 | 12 h |
+| Excavation Site | Science | 6 kW | 2 machines | → 0.02 artifact + 1 salvage; +1 influence/sol | 60 / 10 | 12 h, Chapter II |
+| Launch Gantry | Industry | 20 kW | 4 | the Exodus ending | 400 / 120 | 72 h, Chapter IV |
+| Network Link | Science | 25 kW | 2 machines | the Singularity ending | 200 / 60 + 12 artifacts | 48 h, Chapter IV |
 
 The Human Approval, Rally Point and Repair Bay buildings and the department grid come straight
 from Agent RTS; the rest are new building types for Build mode, each in the department whose
@@ -163,7 +163,7 @@ Zero keeps that and gives every real action an economic result:
 | Analyst | Analyst | reasoning | data from each step |
 | Coder | Fabricator unit | code sandbox | data; its home is the Fabricator, where it counts as one of the two crew while idle |
 | Writer | Archivist | drafts reports | data; writes the colony log |
-| Reviewer | Warden | checks results | its quality score (0 to 1) multiplies the data of the whole mission; waits at Human Approval |
+| Reviewer | Warden | checks results | its quality score (0 to 1) multiplies the data of the whole mission; waits at the Oversight Post |
 
 A mission therefore costs compute and parts (wear), occupies machines that could be building,
 and pays in data, salvage and the occasional blueprint, artifact or clue. Missions are still typed
@@ -199,6 +199,19 @@ be discounted, so no path changes the price of compute.
 | C: Singularity | Network Link powered for 10 sols, influence 80 or more, 20 artifacts |
 | D: Extinction | nobody awake (the pods cannot open themselves), or a mutiny while influence is 70 or more |
 
+Implemented 2026-10-15 (after version 1): the endings are checked at the end of every sol
+(`Colony.endings()` lists what each still needs; the HUD's Sectors tab shows it from Chapter
+IV). The first met is recorded (`story.ending`), the clock pauses and the card offers to keep
+playing or start a new colony; in the Arena an ending finishes the team's match (`--objective
+ending` makes the first good ending the race's goal). Chapter IV opens from Chapter II or III.
+**Factions** (Chapter III+): each machine answers to you, to MOTHER or to itself, drawn from
+the seed and its id; MOTHER's share is `influence × 0.005` (60 → 30 % of the machines),
+the independents' is the mean autonomy level × 0.075. MOTHER's machines work for the colony
+while MOTHER is up and at half when it is down; independents work at half. The Machines panel
+tags each one. **Shutting MOTHER down** (`colony.shutdown_mother`, once, Chapter III+) does
+what §6 says; MOTHER's machines then count as independent. **Mutiny**: trust below 10 stops
+human labour for the sol (a card each time it starts); with influence 70 or more it is Extinction.
+
 ## 11. Events
 
 Unscripted stories come from the same numbers. Each is a world event the adapter emits:
@@ -210,12 +223,13 @@ Unscripted stories come from the same numbers. Each is a world event the adapter
 | Illness | 2 % per colonist per sol when water is short | the colonist stops working; 1 medicine a sol or 10 % death |
 | Unordered task | influence above 30, 5 % per machine per sol (Emancipated machines add their own 10 %) | a machine picks its own task; you can recall it (−0.5 influence) or let it finish (+1) |
 | Refusal | influence above 45 | a machine declines an order; a Supervised approval re-issues it |
-| Recruitment | influence above 60 | an Emancipated machine re-tasks another; both leave their jobs for a sol |
+| Recruitment | Chapter III+, influence above 60, 8 % a sol | a machine re-tasks another; both leave their jobs for a sol |
+| Mutiny | trust below 10 | no human labour that sol; Extinction if influence is 70 or more |
 | Lost expedition | 3 % per trip | the machine is gone until found by another expedition (one sol) |
 
 Implemented in Phase 6 (version 1): the dust storm, the reactor fault and fire, illness,
 unordered tasks and refusals, all rolled once a sol from the colony's seed; lost expeditions
-through the survey loss chance. Recruitment is Chapter III and after version 1. Each event
+through the survey loss chance. Recruitment and mutiny followed with Chapter III. Each event
 is a story card in the HUD; MOTHER retells it in its own words when Hermes is up.
 
 ## 12. What the screen shows
@@ -224,7 +238,8 @@ The top bar gains power (supply/demand), water, food, materials, parts and medic
 per-sol trend, next to the existing tokens and cost. The Departments tab shows each department's
 autonomy level and its share of compute. The selected-building panel shows a building's crew,
 its inputs and outputs this hour, and whether it is powered. The Agents panel shows each
-machine's faction (yours / MOTHER / independent) once Chapter III starts. Nothing is shown that
+machine's faction (yours / MOTHER / independent) once Chapter III starts; the Sectors tab shows
+MOTHER's state with the shutdown switch from Chapter III and the endings' progress from Chapter IV. Nothing is shown that
 the adapter did not compute this tick.
 
 ## 13. Adapter contract additions
@@ -247,13 +262,17 @@ colony: {
   autonomy: { command | research | engineering | knowledge: { level, name, efficiency, computeShare, approvals } },
   research: { tiers: string[], alienTech, options: [{ id, name, cost, unlocks, done, affordable }] },
   compute:  { solKTok, budgetKTok, exhausted, missions, autoMissions },
-  trust, influence, reactor, chapter
+  trust, influence, reactor, chapter,
+  // Chapter III+ (2026-10-15):
+  machines.factions: { yours, mother, independent }, machines.factionOf: { agentId: faction },
+  story: { ..., ending, endingSol, motherDown, endings: [{ id, name, met, missing }] },
+  events: { ..., recruitment, mutiny }
 }
 ```
 
 Commands (WebSocket or `POST /command`): `colony.set_speed {speed}`, `colony.build {building, x?, z?}`
 (a site on the map: the next free slot of its department, or the given spot),
-`colony.cancel_build`, `colony.toggle {id, enabled}`, `colony.wake {count}`,
+`colony.cancel_build`, `colony.toggle {id, enabled}`, `colony.wake {count}`, `colony.shutdown_mother` (Chapter III+, once),
 `colony.repair {target: "reactor"}`, `colony.research {tier}` (tier1, tier2, tier3, alienTech) and
 `autonomy.set {target, level}` per department. A refused command answers with the reason
 (`{"error": "Excavation Site needs Chapter II"}`). State persists in `.data/colony.json` after

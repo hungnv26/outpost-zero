@@ -207,3 +207,87 @@ test("the story: surplus plus an expedition opens Chapter II, the path has stand
   const f = new Colony(defs); // influence low: no machine wanders off
   assert.throws(() => f.resolveUnordered(true), /no machine/);
 });
+
+test("Chapters III and IV: factions, MOTHER's shutdown, the truth, and the four endings", () => {
+  const c = new Colony(defs);
+  c.setMachines(8, ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"]);
+  assert.deepEqual(c.factions().counts, { yours: 8, mother: 0, independent: 0 }); // before Chapter III everyone is yours
+  assert.throws(() => c.shutdownMother(), /Chapter III/);
+  c.state.chapter = "III";
+  c.state.influence = 80;
+  c.state.autonomy = { command: 3, research: 3, engineering: 3, knowledge: 3 };
+  const f = c.factions();
+  assert.ok(f.counts.mother > 0 && f.counts.yours < 8, `the machines split: ${JSON.stringify(f.counts)}`);
+  assert.deepEqual(c.factions().of, f.of); // stable from the seed
+  // Shutting MOTHER down: influence falls, autonomy is capped, compute halves, efficiency drops.
+  const trust = c.state.trust;
+  c.shutdownMother();
+  assert.equal(c.state.story.motherDown, true);
+  assert.equal(c.state.influence, 40);
+  assert.equal(c.state.trust, Math.min(100, trust + 5));
+  assert.equal(c.state.autonomy.command, 1);
+  assert.throws(() => c.setAutonomy("command", 2), /capped/);
+  assert.equal(c.budgetKTok(), defs.compute.budgetKTokPerSol * 0.5);
+  assert.ok(c.efficiency() < 1, `efficiency ${c.efficiency()}`);
+  assert.equal(c.factions().counts.mother, 0);
+  assert.throws(() => c.shutdownMother(), /already/);
+  assert.ok(c.state.story.cards.some((k) => k.key === "motherDown"));
+  // Chapter IV opens with Alien Tech and a Relay Dish.
+  const d = new Colony(defs);
+  d.state.chapter = "III";
+  d.state.research.alienTech = true;
+  d.state.buildings.push({ id: "dish", type: "relayDish", enabled: true, builtAt: 0 });
+  d.state.hour = 23;
+  d.tick();
+  assert.equal(d.state.chapter, "IV");
+  assert.ok(d.state.story.cards.some((k) => k.key === "chapterIV"));
+  assert.ok(d.endings().every((e) => !e.met));
+  assert.match(d.endings().find((e) => e.id === "Exodus")!.missing, /Launch Gantry/);
+  // Exodus: a powered gantry, the stocks and the crew; the clock pauses and the card is shown.
+  d.state.buildings.push({ id: "g", type: "launchGantry", enabled: true, builtAt: 0 });
+  d.state.buildings.push({ id: "depot", type: "storageDepot", enabled: true, builtAt: 0 }); // the stocks need its caps
+  d.state.stocks = { ...d.state.stocks, parts: 320, materials: 820, data: 2500, charge: 500 };
+  d.state.awake = 40;
+  d.state.hour = 47;
+  d.tick();
+  d.state.hour = 47;
+  d.tick();
+  assert.equal(d.state.story.ending, "Exodus");
+  assert.equal(d.state.speed, 0);
+  assert.equal(d.state.story.cards[d.state.story.cards.length - 1].key, "endingExodus");
+  // Extinction by mutiny while MOTHER holds the machines; and by nobody awake.
+  const e = new Colony(defs);
+  e.state.trust = 5;
+  e.state.influence = 70;
+  e.state.hour = 23;
+  e.tick();
+  assert.equal(e.state.story.ending, "Extinction");
+  assert.ok(e.state.story.cards.some((k) => k.key === "mutiny"));
+  const g = new Colony(defs);
+  g.state.awake = 0;
+  g.state.hour = 23;
+  g.tick();
+  assert.equal(g.state.story.ending, "Extinction");
+  // New Eden and Singularity report what is still missing.
+  const h = new Colony(defs);
+  assert.match(h.endings().find((x) => x.id === "NewEden")!.missing, /180 awake/);
+  assert.match(h.endings().find((x) => x.id === "Singularity")!.missing, /Network Link/);
+  // Mutiny without MOTHER's grip: no human labour that sol, then back to work.
+  const m = new Colony(defs);
+  m.state.trust = 5;
+  m.state.influence = 10;
+  m.state.hour = 23;
+  m.tick();
+  assert.equal(m.state.events.mutinySols, 1);
+  assert.equal(m.state.story.ending, null);
+  m.tick();
+  assert.ok(m.state.last.labour <= m.state.machines * m.efficiency() + 0.01, `machines only: ${m.state.last.labour}`);
+  // The view carries it all, and a save round-trips the new fields.
+  const v = c.view();
+  assert.equal(v.story.motherDown, true);
+  assert.equal(v.machines.factions.mother, 0);
+  assert.equal(v.story.endings.length, 4);
+  const dir = mkdtempSync(join(tmpdir(), "oz-"));
+  saveColonyState(join(dir, "c.json"), d.state);
+  assert.equal(loadColonyState(join(dir, "c.json"))!.story.ending, "Exodus");
+});
