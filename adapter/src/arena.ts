@@ -2,12 +2,13 @@
 // against the clock. The referee validates every action, enforces the per-hour window and
 // the token budget, scores the colony, and ends the match on its objective or its last sol.
 import { EventEmitter } from "node:events";
-import { Colony, ColonyError, type ColonyRunner, type ColonyView, DEPTS } from "./economy.ts";
-import type { ArenaInfo, BaseOnMap, ScoreEntry, ServerMessage } from "./contract.ts";
+import { Colony, ColonyError, type ColonyRunner, type ColonyView, conditionsFrom, DEPTS } from "./economy.ts";
+import type { ArenaInfo, BaseOnMap, Battlefield, BattlefieldItem, ScoreEntry, ServerMessage } from "./contract.ts";
+import { TERRAINS } from "./layout.ts";
 import type { World } from "./world.ts";
 
 export type Mode = "race" | "timed";
-export type Objective = "awakening" | "foothold" | "ending";
+export type Objective = "awakening" | "foothold" | "ending" | "sprint" | "lifeline";
 
 export interface MatchConfig {
   mode: Mode;
@@ -19,6 +20,35 @@ export interface MatchConfig {
   model: string; // for the scoreboard
   actionsPerHour: number;
   source?: string; // where the match was set up (e.g. a Mission Control task id)
+  battlefield?: Battlefield; // the director's pick from design/maps.json battlefields
+}
+
+const ITEM_KINDS = ["wreck", "wreckLarge", "relay", "ruins", "hangar", "rocket", "turret", "generator", "monorail", "pipeline", "ridge", "chasm", "crater", "lake", "mesa", "crystals", "meteors"];
+const LIQUIDS = ["water", "ice", "lava", "methane"];
+
+// A battlefield from the director, checked: known kinds and terrain, finite numbers, at most 80 items.
+export function battlefieldFrom(b: unknown): Battlefield | undefined {
+  if (!b || typeof b !== "object") return undefined;
+  const o = b as Record<string, unknown>;
+  const str = (v: unknown, max = 80) => (typeof v === "string" ? v.slice(0, max) : "");
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(-2000, Math.min(2000, v)) : undefined);
+  const items = (v: unknown): BattlefieldItem[] =>
+    (Array.isArray(v) ? v : []).slice(0, 80).flatMap((raw) => {
+      const i = (raw ?? {}) as Record<string, unknown>;
+      const x = num(i.x);
+      const z = num(i.z);
+      if (!ITEM_KINDS.includes(String(i.kind)) || x === undefined || z === undefined) return [];
+      const out: BattlefieldItem = { kind: String(i.kind), x, z };
+      for (const k of ["x2", "z2", "r", "w", "h", "rot", "size"] as const) {
+        const n = num(i[k]);
+        if (n !== undefined) out[k] = n;
+      }
+      if (LIQUIDS.includes(String(i.liquid))) out.liquid = String(i.liquid);
+      return [out];
+    });
+  const terrain = str(o.terrain);
+  if (!(TERRAINS as readonly string[]).includes(terrain)) return undefined;
+  return { id: str(o.id, 40) || "battlefield", name: str(o.name) || "Battlefield", terrain, brief: str(o.brief, 200), conditions: conditionsFrom(o.conditions), structures: items(o.structures), obstacles: items(o.obstacles) };
 }
 
 export interface ActionRecord {
@@ -57,9 +87,19 @@ export interface MatchState {
   result: MatchResult | null;
 }
 
+export const LIFELINE = ["waterExtractor", "hydroponics", "solarArray", "scrapYard", "medBay"];
+
 export const OBJECTIVES: Record<Objective, { name: string; check: (c: Colony) => boolean; describe: string }> = {
   awakening: { name: "Awakening", check: (c) => c.state.awake >= 100, describe: "100 colonists awake" },
   foothold: { name: "Foothold", check: (c) => c.state.awake >= 60 && c.state.shortSols.food === 0 && c.state.shortSols.water === 0 && c.state.stocks.food > 300 && c.state.stocks.water > 300, describe: "60 awake and fed and watered with reserves" },
+  // A race a short match can finish: past the first Habitat's 40 beds and the 30 medicine of
+  // the landing (2 per colonist woken), with food and water for everyone. It takes a Med Bay, a
+  // second Habitat, water and power, in a sensible order.
+  sprint: { name: "Sprint", check: (c) => c.state.awake >= 44 && c.state.shortSols.food === 0 && c.state.shortSols.water === 0 && c.state.shortHours.food === 0 && c.state.shortHours.water === 0, describe: "first to 44 colonists awake, nobody hungry or thirsty" },
+  // The shortest race: water, food, power, materials and medicine all produced at home. The
+  // five cost 260 materials against the landing's 150, so the Scrap Yard's place in the order
+  // decides it (about 5 sols played well).
+  lifeline: { name: "Lifeline", check: (c) => LIFELINE.every((t) => c.state.buildings.some((b) => b.type === t && b.enabled)), describe: "first to run a Water Extractor, Hydroponics Bay, Solar Array, Scrap Yard and Med Bay" },
   ending: { name: "Ending", check: (c) => !!c.state.story.ending && c.state.story.ending !== "Extinction", describe: "reach Exodus, New Eden or Singularity" },
 };
 
@@ -87,6 +127,9 @@ export class Arena extends EventEmitter {
   // The match map: every team's base origin (from the director; design/maps.json).
   private map = "solo";
   private bases: BaseOnMap[] = [];
+  // The match's outcome across all teams, from the director: a race lost to another team ends
+  // here as "stopped", and every window should still show who won.
+  private outcome: { winner: string | null; reason: string } | null = null;
 
   constructor(runner: ColonyRunner, world: World) {
     super();
@@ -116,11 +159,12 @@ export class Arena extends EventEmitter {
     };
   }
 
-  setScoreboard(entries: ScoreEntry[], bases?: BaseOnMap[], map?: string): void {
+  setScoreboard(entries: ScoreEntry[], bases?: BaseOnMap[], map?: string, outcome?: { winner: string | null; reason: string }): void {
     const mine = this.match?.config.team ?? "A";
     this.others = entries.filter((e) => e.team !== mine);
     if (bases) this.bases = bases;
     if (map) this.map = map;
+    if (outcome) this.outcome = outcome;
     this.publishInfo();
   }
 
@@ -131,6 +175,7 @@ export class Arena extends EventEmitter {
     return {
       id: m.id,
       map: this.map,
+      battlefield: m.config.battlefield ?? null,
       bases: this.bases,
       status: m.status,
       mode: m.config.mode,
@@ -140,7 +185,7 @@ export class Arena extends EventEmitter {
       sol: v.sol,
       team: m.config.team,
       scoreboard: [this.myScore(), ...this.others],
-      result: m.result ? { winner: m.result.winner, reason: m.result.reason } : null,
+      result: this.outcome ?? (m.result ? { winner: m.result.winner, reason: m.result.reason } : null),
     };
   }
 
@@ -154,11 +199,28 @@ export class Arena extends EventEmitter {
     if (this.match) this.match.rounds++;
   }
 
+  // The Governor starts a new Hermes chat: its token count starts again from zero.
+  chatReset(): void {
+    this.govTokens = 0;
+  }
+
+  // Real token counts from the key gateway (tools/arena_setup.mjs): every call the team's model
+  // answered, as the provider reported it, Governor turns, missions and retries alike. Once the
+  // first report arrives the match is charged these instead of Hermes' estimates, so the budget
+  // and the freeze follow what the provider billed.
+  private realTokens = false;
+  providerUsage(tokens: number): void {
+    if (!this.match || this.match.status !== "running" || !Number.isFinite(tokens) || tokens <= 0) return;
+    this.realTokens = true;
+    this.runner.realTokens = true;
+    this.runner.command((c) => c.useCompute(Math.round(tokens)));
+  }
+
   roundEnded(reply: { text: string; tokens: number; latencyS: number; timedOut: boolean }): void {
     this.roundStartedAt = null;
     const delta = Math.max(0, reply.tokens - this.govTokens);
     if (reply.tokens > this.govTokens) this.govTokens = reply.tokens;
-    if (delta > 0) this.runner.command((c) => c.useCompute(delta));
+    if (delta > 0 && !this.realTokens) this.runner.command((c) => c.useCompute(delta));
     const team = this.match?.config.team ?? "A";
     if (reply.timedOut) this.world.logLine(`Team ${team}'s Governor did not answer in time (lost decision).`, "warn");
     else if (reply.text.trim()) this.world.logLine(`Team ${team} (${reply.latencyS}s): ${reply.text.trim().slice(0, 140)}`, "info");
@@ -169,7 +231,7 @@ export class Arena extends EventEmitter {
     if (this.match?.status === "running") throw new ColonyError("a match is already running");
     const config: MatchConfig = {
       mode: cfg.mode === "race" ? "race" : "timed",
-      objective: cfg.objective === "foothold" ? "foothold" : cfg.objective === "ending" ? "ending" : "awakening",
+      objective: cfg.objective === "foothold" || cfg.objective === "ending" || cfg.objective === "sprint" || cfg.objective === "lifeline" ? cfg.objective : "awakening",
       sols: Math.max(1, Math.min(200, Math.floor(cfg.sols ?? 30))),
       tokenBudget: Math.max(10_000, Math.floor(cfg.tokenBudget ?? 2_000_000)),
       seed: Math.floor(cfg.seed ?? 4217),
@@ -177,12 +239,18 @@ export class Arena extends EventEmitter {
       model: cfg.model ?? "unknown",
       actionsPerHour: Math.max(1, Math.floor(cfg.actionsPerHour ?? 6)),
       source: cfg.source,
+      battlefield: battlefieldFrom(cfg.battlefield),
     };
-    this.runner.colony.state = Colony.initial(this.runner.colony.defs, config.seed);
+    this.runner.freshBase();
+    this.runner.colony.state = Colony.initial(this.runner.colony.defs, config.seed, config.battlefield?.conditions);
+    if (config.battlefield) this.map = config.battlefield.id;
     this.runner.colony.card("landing");
     this.runner.syncWithLayout();
     this.govTokens = 0;
     this.roundStartedAt = null;
+    this.outcome = null;
+    this.realTokens = false;
+    this.runner.realTokens = false;
     this.match = {
       id: `m${Date.now().toString(36)}`,
       status: "running",
@@ -199,6 +267,10 @@ export class Arena extends EventEmitter {
       notes: [],
       result: null,
     };
+    if (config.battlefield) {
+      const k = config.battlefield.conditions;
+      this.world.logLine(`Battlefield: ${config.battlefield.name} (${config.battlefield.terrain}). ${config.battlefield.brief} Solar ×${k.solar}, water ×${k.water}, salvage ×${k.salvage}, storms ×${k.storms}.`, "info");
+    }
     this.world.logLine(`Match ${this.match.id}: ${config.mode} · ${OBJECTIVES[config.objective].name} · ${config.sols} sols · ${Math.round(config.tokenBudget / 1000)} kTok for team ${config.team} (${config.model})`, "warn");
     this.runner.command((c) => c.setSpeed(c.state.speed === 0 ? 1 : c.state.speed));
     this.emit("match", this.match);
@@ -226,7 +298,7 @@ export class Arena extends EventEmitter {
     const lat = acts.filter((a) => a.latencyS !== null).map((a) => a.latencyS as number);
     return {
       match: m
-        ? { id: m.id, status: m.status, mode: m.config.mode, objective: m.config.objective, objectiveText: OBJECTIVES[m.config.objective].describe, sol: v.sol, hour: v.hour, solsLeft: Math.max(0, m.config.sols - v.sol), realSecondsPerHour: v.realSecondsPerHour / Math.max(1, v.speed) }
+        ? { id: m.id, battlefield: m.config.battlefield ? { name: m.config.battlefield.name, terrain: m.config.battlefield.terrain, brief: m.config.battlefield.brief, conditions: m.config.battlefield.conditions } : null, status: m.status, mode: m.config.mode, objective: m.config.objective, objectiveText: OBJECTIVES[m.config.objective].describe, sol: v.sol, hour: v.hour, solsLeft: Math.max(0, m.config.sols - v.sol), realSecondsPerHour: v.realSecondsPerHour / Math.max(1, v.speed) }
         : null,
       budget: { tokensUsed: used, tokenBudget: m?.config.tokenBudget ?? null, frozen: m?.frozen ?? false, avgLatencyS: lat.length ? Math.round((lat.reduce((a, b) => a + b, 0) / lat.length) * 10) / 10 : null, actionsLeftThisHour: m ? Math.max(0, m.config.actionsPerHour - m.hourActions) : null },
       power: { supplyKw: v.power.supplyKw, demandKw: v.power.demandKw, chargeKwh: v.power.chargeKwh, chargeCapKwh: v.power.chargeCapKwh, night: !v.daylight, cut: v.power.cut },
@@ -244,7 +316,7 @@ export class Arena extends EventEmitter {
       influence: v.influence,
       reactor: v.reactor,
       chapter: v.chapter,
-      lastActions: acts.slice(-6).map((a) => ({ id: a.id, tool: a.tool, ok: a.ok, reason: a.reason })),
+      lastActions: acts.slice(-6).map((a) => ({ id: a.id, hour: a.hour, tool: a.tool, args: a.args, ok: a.ok, reason: a.reason })),
       scoreboard: m ? [{ team: m.config.team, model: m.config.model, awake: v.colonists.awake, value: colonyValue(c), avgLatencyS: lat.length ? Math.round((lat.reduce((a, b) => a + b, 0) / lat.length) * 10) / 10 : null, tokens: used }] : [],
     };
   }

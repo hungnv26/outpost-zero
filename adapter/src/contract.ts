@@ -110,9 +110,37 @@ export interface BaseOnMap {
   model?: string;
 }
 
+// A battlefield (design/maps.json battlefields, tools/make_battlefields.mjs): the terrain every
+// window shows during the match, scenery in the wild between the bases, and the conditions.
+// Coordinates are in match-world units, base A's corner at 0,0.
+export interface BattlefieldItem {
+  kind: string; // structures: wreck wreckLarge relay ruins hangar rocket turret generator monorail pipeline; obstacles: ridge chasm crater lake mesa crystals meteors
+  x: number;
+  z: number;
+  x2?: number; // lines (ridge, chasm, monorail, pipeline) run from x,z to x2,z2
+  z2?: number;
+  r?: number; // radius (crater, lake, mesa, crystals, meteors)
+  w?: number; // width of a line
+  h?: number; // height (mesa)
+  rot?: number; // degrees
+  size?: number; // footprint of a structure
+  liquid?: string; // lake: water | ice | lava | methane
+}
+
+export interface Battlefield {
+  id: string;
+  name: string;
+  terrain: string;
+  brief: string;
+  conditions: { solar: number; water: number; salvage: number; storms: number };
+  structures: BattlefieldItem[];
+  obstacles: BattlefieldItem[];
+}
+
 export interface ArenaInfo {
   id: string;
-  map: string; // design/maps.json preset
+  map: string; // design/maps.json preset or battlefield id
+  battlefield?: Battlefield | null;
   bases: BaseOnMap[];
   status: "lobby" | "running" | "finished";
   mode: string;

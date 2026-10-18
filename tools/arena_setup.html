@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arena Setup · Outpost Zero</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* One column of numbered steps: teams, match, apply, play; the live board under them. */
+:root {
+  --bg: #15171b; --panel: #1d2026; --panel-2: #232731; --line: #2f3440; --ink: #e7e3dc; --muted: #9a958c;
+  --accent: #d07a4f; --team-a: #5b8fd6; --team-b: #d98b4a; --good: #6fae7b; --warn: #d2a24c; --bad: #d9675c;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 var(--body); }
+.wrap { max-width: 1100px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 60px; display: grid; gap: 22px; }
+header h1 { font: 700 34px/1 var(--display); letter-spacing: .03em; text-transform: uppercase; margin: 0 0 6px; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 14px; }
+.step > h2 { margin: 0; font: 700 20px/1 var(--display); letter-spacing: .05em; text-transform: uppercase; display: flex; gap: 10px; align-items: baseline; }
+.step > h2 .n { color: var(--accent); font-variant-numeric: tabular-nums; }
+.step > h2 small { font: 400 13px var(--body); letter-spacing: 0; text-transform: none; color: var(--muted); }
+.teams { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+.team { background: var(--panel-2); border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: 6px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.team[data-team="A"] { --c: var(--team-a); } .team[data-team="B"] { --c: var(--team-b); }
+.team h3 { margin: 0; font: 700 18px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+input, select { font: 14px var(--body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; width: 100%; min-width: 0; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.row.two { grid-template-columns: 1fr 1fr; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+.check input { width: auto; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: 600 13px var(--body); color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 8px 14px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #1a120d; }
+button:disabled { opacity: .5; cursor: default; }
+.msg { font-size: 13px; color: var(--muted); min-height: 1.4em; }
+.msg.ok { color: var(--good); } .msg.err { color: var(--bad); }
+.dots { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--muted); }
+.dot::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line); margin-right: 6px; vertical-align: 1px; }
+.dot.on::before { background: var(--good); } .dot.off::before { background: var(--bad); }
+.key-hint { font: 12px var(--mono); color: var(--muted); }
+pre { margin: 0; font: 12px/1.45 var(--mono); color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; max-height: 220px; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+th { font: 600 12px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+td .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+.table { overflow-x: auto; }
+.result { font: 700 20px/1.2 var(--display); letter-spacing: .03em; }
+video { width: 100%; max-width: 720px; border-radius: 6px; border: 1px solid var(--line); background: #000; }
+.note { font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Arena Setup</h1>
+  <p>Give each team a model and an API key, bring both teams up, then start a race. Keys stay on this Mac in files only you can read; the teams' agents reach the providers through a local gateway and never see a key.</p>
+</header>
+
+<section class="step">
+  <h2><span class="n">1</span>Teams <small>Provider, model and API key for each side</small></h2>
+  <div class="teams" id="teams"></div>
+</section>
+
+<section class="step">
+  <h2><span class="n">2</span>Match <small>The race both teams play</small></h2>
+  <div class="row">
+    <label>Objective
+      <select id="objective">
+        <option value="lifeline">Lifeline: first to run water, food, power, materials and medicine</option>
+        <option value="sprint">Sprint: first to 44 colonists awake</option>
+        <option value="foothold">Foothold: 60 awake with reserves</option>
+        <option value="awakening">Awakening: 100 awake</option>
+        <option value="ending">Ending: Exodus, New Eden or Singularity</option>
+      </select>
+    </label>
+    <label>Battlefield <select id="map"></select></label>
+    <label>Sol limit <input id="sols" type="number" min="1" max="200"></label>
+    <label>Seconds per colony hour <input id="clock" type="number" min="0.3" max="60" step="0.1"></label>
+    <label>Token budget per team <input id="budget" type="number" min="10000" step="10000"></label>
+  </div>
+  <label class="check"><input id="record" type="checkbox"> Record the match to a video (team A's view of both bases)</label>
+  <div class="buttons"><button id="save-settings">Save match settings</button><span class="msg" id="settings-msg"></span></div>
+</section>
+
+<section class="step">
+  <h2><span class="n">3</span>Apply <small>Start each team's agents with its model, on the match clock</small></h2>
+  <div class="buttons"><button class="primary" id="apply">Apply teams</button><span class="msg" id="apply-msg"></span></div>
+  <pre id="apply-log" hidden></pre>
+</section>
+
+<section class="step">
+  <h2><span class="n">4</span>Play <small>Open the two game windows and start the race</small></h2>
+  <div class="buttons">
+    <button id="windows">Open game windows</button>
+    <button class="primary" id="start">Start match</button>
+    <button id="stop">Stop match</button>
+    <span class="msg" id="play-msg"></span>
+  </div>
+  <div id="board"></div>
+  <pre id="director" hidden></pre>
+</section>
+
+<section class="step" id="recordings-step" hidden>
+  <h2><span class="n">5</span>Recordings</h2>
+  <video id="video" controls preload="metadata"></video>
+  <div class="note" id="recordings"></div>
+</section>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const PROVIDERS = __PROVIDERS__;
+const MAPS = __MAPS__;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+let filled = false;
+let shownVideo = "";
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json", "x-setup-token": TOKEN }, body: JSON.stringify(body ?? {}) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || `HTTP ${r.status}`);
+  return j;
+}
+function say(id, text, kind) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "msg" + (kind ? " " + kind : "");
+}
+
+function teamCard(t) {
+  const opts = Object.entries(PROVIDERS).map(([k, v]) => `<option value="${k}">${esc(v.name)}</option>`).join("");
+  return `<div class="team" data-team="${t}">
+    <h3>Team ${t}</h3>
+    <div class="row two">
+      <label>Provider <select id="prov-${t}">${opts}</select></label>
+      <label>Model <input id="model-${t}" list="models-${t}" autocomplete="off" spellcheck="false"><datalist id="models-${t}"></datalist></label>
+    </div>
+    <label id="keyrow-${t}">API key <input id="key-${t}" type="password" autocomplete="off" spellcheck="false" placeholder="Paste the key"></label>
+    <div class="key-hint" id="keyhint-${t}"></div>
+    <div class="buttons">
+      <button id="save-${t}">Save team ${t}</button>
+      <button id="test-${t}">Test key</button>
+      <span class="msg" id="msg-${t}"></span>
+    </div>
+    <div class="dots" id="dots-${t}"></div>
+  </div>`;
+}
+$("teams").innerHTML = ["A", "B"].map(teamCard).join("");
+$("map").innerHTML = `<option value="random">Random battlefield</option>` + MAPS.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} (${esc(m.terrain)})</option>`).join("") + `<option value="duel">Plain duel map</option>`;
+
+function syncProvider(t) {
+  const p = $("prov-" + t).value;
+  $("models-" + t).innerHTML = (PROVIDERS[p]?.models ?? []).map((m) => `<option value="${esc(m)}">`).join("");
+  $("keyrow-" + t).hidden = p === "ollama";
+  $("test-" + t).hidden = p === "ollama";
+}
+for (const t of ["A", "B"]) {
+  $("prov-" + t).addEventListener("change", () => {
+    syncProvider(t);
+    $("model-" + t).value = PROVIDERS[$("prov-" + t).value]?.models?.[0] ?? "";
+  });
+  $("save-" + t).addEventListener("click", async () => {
+    try {
+      await post("/api/team", { team: t, provider: $("prov-" + t).value, model: $("model-" + t).value, key: $("key-" + t).value });
+      $("key-" + t).value = "";
+      say("msg-" + t, "Saved", "ok");
+      refresh();
+    } catch (e) { say("msg-" + t, e.message, "err"); }
+  });
+  $("test-" + t).addEventListener("click", async () => {
+    say("msg-" + t, "Testing…");
+    try {
+      if ($("key-" + t).value) await post("/api/team", { team: t, provider: $("prov-" + t).value, model: $("model-" + t).value, key: $("key-" + t).value }), ($("key-" + t).value = "");
+      const r = await post("/api/test", { team: t });
+      if (r.ok) say("msg-" + t, `Key works: "${r.reply}" in ${(r.ms / 1000).toFixed(1)} s`, "ok");
+      else say("msg-" + t, r.error, "err");
+      refresh();
+    } catch (e) { say("msg-" + t, e.message, "err"); }
+  });
+}
+
+$("save-settings").addEventListener("click", async () => {
+  try {
+    await post("/api/settings", { objective: $("objective").value, map: $("map").value, sols: $("sols").value, clock: $("clock").value, budget: $("budget").value, record: $("record").checked });
+    say("settings-msg", "Saved", "ok");
+  } catch (e) { say("settings-msg", e.message, "err"); }
+});
+$("apply").addEventListener("click", async () => {
+  try {
+    await post("/api/apply");
+    say("apply-msg", "Starting the teams… this takes a minute");
+    refresh();
+  } catch (e) { say("apply-msg", e.message, "err"); }
+});
+$("windows").addEventListener("click", async () => {
+  try { await post("/api/windows"); say("play-msg", "Game windows opening", "ok"); } catch (e) { say("play-msg", e.message, "err"); }
+});
+$("start").addEventListener("click", async () => {
+  try {
+    await post("/api/settings", { objective: $("objective").value, map: $("map").value, sols: $("sols").value, clock: $("clock").value, budget: $("budget").value, record: $("record").checked });
+    await post("/api/start");
+    say("play-msg", $("record").checked ? "Match started, recording" : "Match started", "ok");
+  } catch (e) { say("play-msg", e.message, "err"); }
+});
+$("stop").addEventListener("click", async () => {
+  try { await post("/api/stop"); say("play-msg", "Match stopped"); } catch (e) { say("play-msg", e.message, "err"); }
+});
+
+function render(s) {
+  if (!filled) {
+    for (const t of ["A", "B"]) {
+      $("prov-" + t).value = s.teams[t].provider;
+      syncProvider(t);
+      $("model-" + t).value = s.teams[t].model;
+    }
+    $("objective").value = s.settings.objective;
+    $("map").value = s.settings.map;
+    $("sols").value = s.settings.sols;
+    $("clock").value = s.settings.clock;
+    $("budget").value = s.settings.budget;
+    $("record").checked = s.settings.record;
+    filled = true;
+  }
+  for (const t of ["A", "B"]) {
+    const x = s.teams[t];
+    const k = x.key;
+    $("keyhint-" + t).textContent = x.provider === "ollama" ? "No key needed: runs on this Mac" : k.saved ? `Key saved (${k.hint}, from ${k.source}). Paste a new one to replace it.` : "No key saved yet";
+    $("key-" + t).placeholder = k.saved ? "Paste to replace the saved key" : "Paste the key";
+    const u = x.usage;
+    $("dots-" + t).innerHTML = [
+      `<span class="dot ${x.hermes ? "on" : "off"}">Agents ${x.hermes ? "up" : "down"}</span>`,
+      `<span class="dot ${x.adapter ? "on" : "off"}">Colony ${x.adapter ? "up" : "down"}</span>`,
+      x.clock ? `<span>Clock ${x.clock} s/hour</span>` : "",
+      x.provider !== "ollama" ? `<span>Gateway: ${u.requests} calls, ${((u.promptTokens + u.completionTokens) / 1000).toFixed(1)}k tokens${u.errors ? `, ${u.errors} errors` : ""}</span>` : "",
+      u.lastError ? `<span style="color:var(--bad)">Last error: ${esc(u.lastError.slice(0, 140))}</span>` : "",
+    ].join("");
+  }
+  const job = s.jobs.apply;
+  if (job) {
+    $("apply-log").hidden = false;
+    $("apply-log").textContent = s.applyLog || "…";
+    if (job.status === "done") say("apply-msg", "Teams are up", "ok");
+    else if (job.status === "failed") say("apply-msg", "Apply failed: see the log", "err");
+  }
+  const a = s.teams.A.arena ?? s.teams.B.arena;
+  if (a) {
+    const board = [...(s.teams.A.arena?.board ?? [])];
+    const result = a.result;
+    $("board").innerHTML = `<div class="result">${result ? `Winner: team ${esc(result.winner ?? "none")}` : `${esc(a.status)} · sol ${a.sol} of ${a.sols}`}</div>
+      <div class="note">${esc(a.map ?? "")} · ${esc(a.objective ?? "")}${result ? " · " + esc(result.reason) : ""}</div>
+      <div class="table"><table><thead><tr><th>Team</th><th>Model</th><th>Value</th><th>Awake</th><th>Tokens</th><th>Avg turn</th><th>Status</th></tr></thead><tbody>
+      ${board.map((b) => `<tr><td><span class="chip" style="background:var(--team-${String(b.team).toLowerCase()})"></span>${esc(b.team)}</td><td>${esc(b.model)}</td><td>${b.value}</td><td>${b.awake}</td><td>${(b.tokens / 1000).toFixed(1)}k</td><td>${b.avgLatencyS ?? "–"} s</td><td>${esc(b.status)}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+  if (s.director) { $("director").hidden = false; $("director").textContent = s.director; }
+  if (s.recordings.length) {
+    $("recordings-step").hidden = false;
+    if (shownVideo !== s.recordings[0]) {
+      shownVideo = s.recordings[0];
+      $("video").src = "/recordings/" + encodeURIComponent(shownVideo);
+    }
+    $("recordings").textContent = "Newest first: " + s.recordings.join(", ") + " (in the project's recordings folder)";
+  }
+}
+
+async function refresh() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    render(await r.json());
+  } catch {}
+}
+refresh();
+setInterval(refresh, 2500);
+</script>
+</body>
+</html>

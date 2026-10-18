@@ -1732,6 +1732,10 @@ func _build_arena_panel():
 
 # The scoreboard: every number is the referee's (docs/arena.md): colony value, colonists
 # awake, tokens spent and the model's average latency per decision.
+static func _num(v) -> String:
+	return str(snappedf(float(v), 0.01)).trim_suffix(".0")
+
+
 func set_arena(a):
 	if a == null or a.is_empty() or a.get("status", "lobby") == "lobby":
 		_arena_panel.visible = false
@@ -1746,6 +1750,10 @@ func set_arena(a):
 	else:
 		_arena_sub.text = "Running · this window is team %s" % a.get("team", "")
 		_arena_sub.add_theme_color_override("font_color", MUTED)
+	var field = a.get("battlefield")
+	if field is Dictionary and not field.is_empty():
+		var k = field.get("conditions", {})
+		_arena_sub.text += "\n%s · solar ×%s · water ×%s · salvage ×%s · storms ×%s" % [field.get("name", ""), _num(k.get("solar", 1)), _num(k.get("water", 1)), _num(k.get("salvage", 1)), _num(k.get("storms", 1))]
 	for c in _arena_rows.get_children():
 		_arena_rows.remove_child(c)
 		c.queue_free()

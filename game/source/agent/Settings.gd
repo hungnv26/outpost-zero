@@ -89,6 +89,14 @@ func apply_window():
 		return
 	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	# `-- --window=x,y,w,h` places this window (in pixels), e.g. two team windows side by side.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--window="):
+			var n = arg.trim_prefix("--window=").split(",")
+			if n.size() == 4:
+				DisplayServer.window_set_size(Vector2i(int(n[2]), int(n[3])))
+				DisplayServer.window_set_position(Vector2i(int(n[0]), int(n[1])))
+				return
 	var screen = DisplayServer.window_get_current_screen()
 	var px = window_size
 	var usable = DisplayServer.screen_get_usable_rect(screen)

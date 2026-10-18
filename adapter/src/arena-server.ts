@@ -52,12 +52,23 @@ export function startArenaServer(arena: Arena, port: number, token: string, host
       }
     }
     if (req.method === "POST" && parts[0] === "arena" && parts[1] === "stop") return json(200, { result: arena.stop("stopped by request") });
+    if (req.method === "POST" && parts[0] === "arena" && parts[2] === "usage") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      try {
+        arena.providerUsage(Number(JSON.parse(body || "{}").tokens));
+        return json(200, { ok: true });
+      } catch (e) {
+        return json(400, { error: e instanceof Error ? e.message : String(e) });
+      }
+    }
     if (req.method === "POST" && parts[0] === "arena" && parts[2] === "scoreboard") {
       let body = "";
       for await (const chunk of req) body += chunk;
       try {
         const b = JSON.parse(body || "{}");
-        arena.setScoreboard(Array.isArray(b.scoreboard) ? b.scoreboard : [], Array.isArray(b.bases) ? b.bases : undefined, typeof b.map === "string" ? b.map : undefined);
+        const o = b.outcome && typeof b.outcome === "object" ? { winner: typeof b.outcome.winner === "string" ? b.outcome.winner : null, reason: String(b.outcome.reason ?? "").slice(0, 200) } : undefined;
+        arena.setScoreboard(Array.isArray(b.scoreboard) ? b.scoreboard : [], Array.isArray(b.bases) ? b.bases : undefined, typeof b.map === "string" ? b.map : undefined, o);
         return json(200, { ok: true });
       } catch (e) {
         return json(400, { error: e instanceof Error ? e.message : String(e) });

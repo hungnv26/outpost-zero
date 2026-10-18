@@ -4,7 +4,9 @@
 // Elo per model in .data/elo.json and writes the result to Mission Control when it is set up.
 //   node tools/match_director.mjs start --teams A,B --mode race --objective awakening --sols 60 --budget 2000000 --seed 4217
 //   node tools/match_director.mjs status | stop
-// Options: --map solo|duel|trio|quad (design/maps.json), --poll ms, --uneven-clocks (skip the
+//   node tools/match_director.mjs maps                      the ten battlefields
+// Options: --map random|<battlefield id>|solo|duel|trio|quad (design/maps.json; two or more teams
+// default to random: a battlefield with its own terrain, scenery and conditions), --poll ms, --uneven-clocks (skip the
 // check that every adapter runs the same COLONY_SECONDS_PER_HOUR).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -33,8 +35,14 @@ const opt = (name, def) => {
 };
 const teams = (opt("teams", "A,B")).split(",").map((t) => t.trim().toUpperCase()).filter(Boolean);
 const MAPS = JSON.parse(readFileSync(join(ROOT, "design", "maps.json"), "utf8"));
-const mapName = opt("map", teams.length <= 1 ? "solo" : teams.length === 2 ? "duel" : teams.length === 3 ? "trio" : "quad");
-const MAP = MAPS[mapName] ?? MAPS.duel;
+const BATTLEFIELDS = MAPS.battlefields ?? {};
+let mapName = opt("map", teams.length <= 1 ? "solo" : "random");
+if (mapName === "random") {
+  const ids = Object.keys(BATTLEFIELDS);
+  mapName = ids.length ? ids[Math.floor(Math.random() * ids.length)] : teams.length === 2 ? "duel" : teams.length === 3 ? "trio" : "quad";
+}
+const FIELD = BATTLEFIELDS[mapName] ? { id: mapName, ...BATTLEFIELDS[mapName] } : null;
+const MAP = FIELD ?? MAPS[mapName] ?? MAPS.duel;
 // Every team's base on the shared map, with the world feed a window needs to render it.
 const bases = () => teams.map((t, i) => ({ team: t, origin: { x: (MAP.bases[t] ?? [80 * i, 0])[0], z: (MAP.bases[t] ?? [80 * i, 0])[1] }, ws: `ws://127.0.0.1:${8771 + 10 * idx(t)}/world`, model: modelOf(t) }));
 
@@ -89,7 +97,12 @@ async function reportToMissionControl(title, text) {
   }
 }
 
-if (cmd === "status") {
+if (cmd === "maps") {
+  for (const [id, b] of Object.entries(BATTLEFIELDS)) {
+    const k = b.conditions;
+    console.log(`${id.padEnd(16)} ${b.name.padEnd(18)} ${b.terrain.padEnd(9)} solar ×${k.solar} water ×${k.water} salvage ×${k.salvage} storms ×${k.storms}  ${b.brief}`);
+  }
+} else if (cmd === "status") {
   for (const s of await Promise.all(teams.map(teamState))) {
     if (!s.ok) console.log(`${s.team}: adapter not reachable at ${adapterUrl(s.team)}`);
     else if (!s.info) console.log(`${s.team}: no match`);
@@ -112,9 +125,9 @@ if (cmd === "status") {
     if (!args.includes("--uneven-clocks")) throw new Error(`colony clocks differ (${text}); restart the adapters with the same COLONY_SECONDS_PER_HOUR, or pass --uneven-clocks`);
     console.log(`warning: colony clocks differ (${text})`);
   }
-  console.log(`Match ${id}: ${JSON.stringify(config)} teams ${teams.join(", ")} on map ${mapName} (${Object.entries(MAP.bases).filter(([t]) => teams.includes(t)).map(([t, o]) => `${t} at ${o}`).join(", ")})`);
+  console.log(`Match ${id}: ${JSON.stringify(config)} teams ${teams.join(", ")} on map ${FIELD ? `${FIELD.name} [${mapName}, ${FIELD.terrain}]` : mapName} (${Object.entries(MAP.bases).filter(([t]) => teams.includes(t)).map(([t, o]) => `${t} at ${o}`).join(", ")})`);
   for (const t of teams) {
-    const r = await post(`${adapterUrl(t)}/arena/start`, { ...config, team: t, model: modelOf(t), source: id });
+    const r = await post(`${adapterUrl(t)}/arena/start`, { ...config, team: t, model: modelOf(t), source: id, ...(FIELD ? { battlefield: FIELD } : {}) });
     if (!r.match) throw new Error(`team ${t} did not start: ${JSON.stringify(r)}`);
     console.log(`  ${t} (${modelOf(t)}) started on ${adapterUrl(t)}`);
   }
@@ -137,8 +150,9 @@ if (cmd === "status") {
       break;
     }
     if (done.length === teams.length) {
+      // Timed, or a race nobody finished: the highest colony value wins.
       const best = [...board].sort((a, b) => b.value - a.value)[0];
-      finished = { winner: config.mode === "timed" ? best?.team ?? null : null, reason: done[0].match.result.reason };
+      finished = { winner: best?.team ?? null, reason: config.mode === "race" ? `${done[0].match.result.reason}; ${best?.team ?? "nobody"} ahead on colony value` : done[0].match.result.reason };
       break;
     }
     if (states.every((s) => !s.ok)) throw new Error("no adapter reachable");
@@ -146,15 +160,15 @@ if (cmd === "status") {
   console.log();
   const states = await Promise.all(teams.map(teamState));
   const board = scoreboard(states).sort((a, b) => b.value - a.value);
-  for (const t of teams) await post(`${arenaUrl(t)}/arena/${t}/scoreboard`, { scoreboard: board, bases: bases(), map: mapName }, true).catch(() => {});
+  for (const t of teams) await post(`${arenaUrl(t)}/arena/${t}/scoreboard`, { scoreboard: board, bases: bases(), map: mapName, outcome: finished }, true).catch(() => {});
   const winner = board.find((b) => b.team === finished.winner) ?? null;
   const table = elo(join(ROOT, ".data", "elo.json"), winner, board.filter((b) => b.team !== finished.winner));
   const lines = [`Match ${id}: ${finished.reason}. Winner: ${finished.winner ?? "none"}.`, ...board.map((b, i) => `${i + 1}. ${b.team} ${b.model}: value ${b.value}, ${b.awake} awake, ${Math.round(b.tokens / 1000)} kTok, latency ${b.avgLatencyS ?? "n/a"} s${b.status === "frozen" ? " (frozen)" : ""}`), `Elo: ${board.map((b) => `${b.model} ${table[b.model]?.rating ?? 1000}`).join(", ")}`];
   console.log(lines.join("\n"));
   mkdirSync(join(ROOT, ".data", "matches"), { recursive: true });
-  writeFileSync(join(ROOT, ".data", "matches", `${id}.json`), JSON.stringify({ id, config, teams, finished, board, states: states.map((s) => s.match), elo: table }, null, 2));
+  writeFileSync(join(ROOT, ".data", "matches", `${id}.json`), JSON.stringify({ id, map: mapName, config, teams, finished, board, states: states.map((s) => s.match), elo: table }, null, 2));
   console.log(`Mission Control: ${(await reportToMissionControl(`Match result: ${teams.join(" vs ")}`, lines.join("\n"))) ? "result posted" : "not configured"}`);
 } else {
-  console.error("usage: match_director.mjs start|status|stop [--teams A,B] [--map duel|trio|quad] [--mode race|timed] [--objective awakening|foothold] [--sols N] [--budget tokens] [--seed N]");
+  console.error("usage: match_director.mjs start|status|stop [--teams A,B] [--map duel|trio|quad] [--mode race|timed] [--objective awakening|foothold|sprint|lifeline|ending] [--sols N] [--budget tokens] [--seed N]");
   process.exit(1);
 }

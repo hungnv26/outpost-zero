@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
-import { Arena, colonyValue } from "../src/arena.ts";
+import { Arena, battlefieldFrom, colonyValue } from "../src/arena.ts";
 import { startArenaServer } from "../src/arena-server.ts";
-import { Colony, ColonyRunner, loadDefs } from "../src/economy.ts";
+import { readFileSync } from "node:fs";
+import { Colony, ColonyRunner, conditionsFrom, loadDefs } from "../src/economy.ts";
 import { FakeSource } from "../src/sources/fake.ts";
 import { World } from "../src/world.ts";
 
@@ -100,4 +101,113 @@ test("the match map places the teams' bases on opposite sides and the window lea
   assert.equal(info.map, "duel");
   assert.deepEqual(info.bases.map((b) => [b.team, b.origin.x]), [["A", 0], ["B", 80]]);
   assert.equal(world.snapshot().arena?.bases.length, 2);
+});
+
+test("the ten battlefields: valid, mirrored, and their conditions change the colony for every team alike", async () => {
+  const maps = JSON.parse(readFileSync(new URL("../../design/maps.json", import.meta.url), "utf8"));
+  const ids = Object.keys(maps.battlefields);
+  assert.equal(ids.length, 10);
+  assert.equal(new Set(ids.map((id) => maps.battlefields[id].terrain)).size, 10, "one terrain per battlefield");
+  for (const id of ids) {
+    const raw = maps.battlefields[id];
+    const b = battlefieldFrom({ id, ...raw })!;
+    assert.ok(b, id);
+    assert.equal(b.structures.length, raw.structures.length, `${id}: every structure survives the check`);
+    assert.equal(b.obstacles.length, raw.obstacles.length, `${id}: every obstacle survives the check`);
+    // Nothing stands inside a base (44 x 44, walls at the edge).
+    for (const it of [...b.structures, ...b.obstacles]) {
+      for (const [bx, bz] of Object.values(raw.bases) as [number, number][]) {
+        assert.ok(!(it.x > bx && it.x < bx + 44 && it.z > bz && it.z < bz + 44), `${id}: ${it.kind} at ${it.x},${it.z} is inside a base`);
+      }
+    }
+  }
+  // Bad input is dropped, not trusted.
+  assert.equal(battlefieldFrom({ terrain: "nowhere" }), undefined);
+  assert.equal(battlefieldFrom({ terrain: "moon", structures: [{ kind: "nuke", x: 1, z: 1 }, { kind: "wreck", x: "a", z: 1 }] })!.structures.length, 0);
+  assert.deepEqual(conditionsFrom({ solar: 9, water: -1, storms: "x" }), { solar: 2, water: 0.25, salvage: 1, storms: 1 });
+
+  // The same seed on a bright, dry map against a dark, wet one: more power, less water.
+  const run = async (id: string) => {
+    const { arena, runner } = await setup();
+    arena.start({ mode: "timed", sols: 5, seed: 99, battlefield: { id, ...maps.battlefields[id] } as never });
+    assert.deepEqual(runner.colony.view().conditions, conditionsFrom(maps.battlefields[id].conditions));
+    assert.equal(arena.info()!.battlefield!.id, id);
+    assert.equal(arena.info()!.map, id);
+    assert.ok((arena.observation().match as { battlefield: { name: string } }).battlefield.name);
+    runner.colony.state.buildings.push({ id: "test-solar", type: "solarArray", enabled: true, builtAt: 0 }, { id: "test-water", type: "waterExtractor", enabled: true, builtAt: 0 });
+    let solar = 0;
+    for (let h = 0; h < 48; h++) {
+      runner.colony.tick();
+      solar = Math.max(solar, runner.colony.view().power.supplyKw);
+    }
+    arena.stop();
+    return { solar, water: runner.colony.state.stocks.water };
+  };
+  const bright = await run("glass-dunes"); // solar 1.25, water 0.75
+  const dark = await run("fracture-ice"); // solar 0.7, water 1.4
+  assert.ok(bright.solar > dark.solar, `solar ${bright.solar} > ${dark.solar}`);
+  assert.ok(dark.water > bright.water, `water ${dark.water} > ${bright.water}`);
+});
+
+test("a sprint starts every team from the crash site and ends on 44 awake; every window shows the winner", async () => {
+  const { arena, runner, world } = await setup();
+  // A base with extra buildings from earlier play goes back to the crash site.
+  runner.colony.state.buildings.push({ id: "old-hydro", type: "hydroponics", enabled: true, builtAt: 0 });
+  world.applyLayout({ ...world.layout, buildings: [...world.layout.buildings, { id: "old-hydro", label: "Hydroponics Bay", x: 6, z: 6, model: "GeodesicDome", color: "#fff", capability: "knowledge", kind: "hydroponics", status: "built" } as never] });
+  arena.start({ mode: "race", objective: "sprint", sols: 10 });
+  assert.ok(!world.layout.buildings.some((b) => b.id === "old-hydro"), "extra buildings removed at match start");
+  assert.ok(!runner.colony.state.buildings.some((b) => b.type === "hydroponics"), "the colony starts without them");
+  assert.equal(arena.info()!.objectiveText, "first to 44 colonists awake, nobody hungry or thirsty");
+  runner.colony.state.awake = 44;
+  runner.colony.tick();
+  (runner as unknown as { publish(): void }).publish();
+  assert.equal(arena.match!.status, "finished");
+  assert.equal(arena.match!.result!.winner, "A");
+  // The losing team's window learns the real winner from the director.
+  const other = await setup();
+  other.arena.start({ mode: "race", objective: "sprint", sols: 10, team: "B" });
+  other.arena.stop("stopped by request");
+  other.arena.setScoreboard([], undefined, undefined, { winner: "A", reason: "Sprint: first to 44 colonists awake" });
+  assert.deepEqual(other.arena.info()!.result, { winner: "A", reason: "Sprint: first to 44 colonists awake" });
+});
+
+test("lifeline: the race ends when water, food, power, materials and medicine all run at home", async () => {
+  const { arena, runner } = await setup();
+  arena.start({ mode: "race", objective: "lifeline", sols: 10 });
+  const types = ["waterExtractor", "hydroponics", "solarArray", "scrapYard"];
+  for (const t of types) runner.colony.state.buildings.push({ id: `t-${t}`, type: t, enabled: true, builtAt: 0 });
+  runner.colony.tick();
+  (runner as unknown as { publish(): void }).publish();
+  assert.equal(arena.match!.status, "running", "four of five is not enough");
+  runner.colony.state.buildings.push({ id: "t-med", type: "medBay", enabled: true, builtAt: 0 });
+  runner.colony.tick();
+  (runner as unknown as { publish(): void }).publish();
+  assert.equal(arena.match!.status, "finished");
+  assert.equal(arena.match!.result!.winner, "A");
+});
+
+test("real token counts from the key gateway replace Hermes' estimates and drive the budget", async () => {
+  const { arena, runner } = await setup();
+  arena.start({ mode: "race", objective: "lifeline", sols: 10, tokenBudget: 20_000 });
+  // Before any report, the Governor's estimate counts.
+  arena.roundEnded({ text: "", tokens: 1_000, latencyS: 1, timedOut: false });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(arena.tokensUsed(), 1_000);
+  // The provider's real count arrives: it is charged, and estimates stop counting.
+  arena.providerUsage(15_000);
+  arena.roundEnded({ text: "", tokens: 9_000, latencyS: 1, timedOut: false });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(arena.tokensUsed(), 16_000);
+  assert.equal(runner.realTokens, true);
+  // Past the budget the team freezes on the next game hour.
+  arena.providerUsage(5_000);
+  await new Promise((r) => setTimeout(r, 20));
+  runner.colony.tick();
+  (runner as unknown as { publish(): void }).publish();
+  assert.equal(arena.match!.frozen, true);
+  // Bad reports are ignored; a new match starts on estimates again.
+  arena.providerUsage(Number.NaN);
+  arena.stop();
+  arena.start({ mode: "race", objective: "lifeline", sols: 10 });
+  assert.equal(runner.realTokens, false);
 });

@@ -34,7 +34,11 @@ var exclude = []  # [Rect2] in world xz: other teams' bases on the match map (no
 func build(terrain: String):
 	for c in get_children():
 		c.queue_free()
-	var spec = SETS.get(terrain, SETS["mars"])
+	var spec = SETS.get(terrain, SETS["mars"]).duplicate()
+	# The lake and the sea sit relative to this window's base; with other bases on the map they
+	# would cover them (and differ per window), so a match map has none (a battlefield brings its own).
+	if not exclude.is_empty():
+		spec.erase("water")
 	var rng = RandomNumberGenerator.new()
 	rng.seed = hash(terrain)
 	var placements = {}  # kind -> [Transform3D]

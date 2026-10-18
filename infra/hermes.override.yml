@@ -4,6 +4,11 @@
 services:
   backend:
     container_name: ${HERMES_PREFIX:-outpostzero}-hermes
+    # Upstream loads vendor/hermes-synapse/.env (the main stack's local-model settings) into the
+    # process environment, which wins over the mounted /app/.env: an Arena team on a cloud model
+    # would silently keep the local one. Each team loads its own file instead.
+    env_file: !override
+      - ${HERMES_ENV_FILE:-./.env}
     ports: !override
       - "127.0.0.1:${HERMES_PORT:-8101}:8000" # 8101 on the host (Agent RTS uses 8100): 8000 is a common dev port
     environment:
@@ -21,6 +26,10 @@ services:
       - ./hermes_sdk:/app/hermes_sdk
       - ./scripts:/app/scripts
       - ${HERMES_ENV_FILE:-./.env}:/app/.env:ro # per-team file for Arena teams; agents' shell commands run in the sandbox (plugin.py), and nothing may rewrite keys
+      # Each Arena team keeps its own Hermes data (SQLite agents, sessions, memory) under
+      # .data/hermes/<T>; the main stack keeps the upstream folder. Without this every team's
+      # Hermes shares one agents table and the last to start rewrites everyone's model.
+      - ${HERMES_DATA_DIR:-./backend/data}:/app/backend/data
       - sandbox_data:/app/backend/data/sandbox
       - ${OUTPOST_ZERO_ROOT:-../..}/infra/hermes-plugin:/app/backend/agentrts:ro
     depends_on:

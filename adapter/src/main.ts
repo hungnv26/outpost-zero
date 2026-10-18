@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startServer } from "./server.ts";
@@ -130,6 +130,29 @@ if (colony && env.ARENA !== "0") {
     const gov = new HermesGovernor({ baseUrl: env.HERMES_URL ?? "http://127.0.0.1:8101", token: env.HERMES_TOKEN ?? "dev_master_token" });
     let busy = false;
     let first = true;
+    // Teams on one shared local model take turns (docs/arena.md §8c): ARENA_LLM_LOCK names a lock
+    // directory that one adapter holds while its Governor thinks, and a team rests an hour after
+    // its turn so the other team gets the next one. Without it both queue on one Ollama slot and
+    // every call runs past Hermes's 45 s limit.
+    const lockDir = env.ARENA_LLM_LOCK;
+    let resting = false;
+    const takeTurn = (): boolean => {
+      if (!lockDir) return true;
+      try {
+        mkdirSync(lockDir);
+        return true;
+      } catch {
+        try {
+          if (Date.now() - statSync(lockDir).mtimeMs > 120_000) rmSync(lockDir, { recursive: true, force: true }); // a crashed holder
+        } catch {}
+        return false;
+      }
+    };
+    const endTurn = () => {
+      if (!lockDir) return;
+      rmSync(lockDir, { recursive: true, force: true });
+      resting = true;
+    };
     arena.on("match", () => {
       gov.newChat();
       first = true;
@@ -137,9 +160,22 @@ if (colony && env.ARENA !== "0") {
     arena.on("hour", () => {
       const a = arena!;
       if (busy || a.match?.status !== "running" || a.match.frozen) return;
+      if (resting) {
+        resting = false;
+        return;
+      }
+      if (!takeTurn()) return;
       busy = true;
       a.roundStarted();
-      const prompt = roundPrompt(a.observation(), first);
+      // Every turn is a fresh chat with the full rules and the current observation (lastActions
+      // carries what happened). In one long chat a small model starts copying its earlier
+      // replies ("I built a Scrap Yard") instead of calling the tools, and every turn gets
+      // slower as the history grows. ARENA_GOVERNOR_MEMORY=1 keeps one chat per match.
+      if (env.ARENA_GOVERNOR_MEMORY !== "1") {
+        gov.newChat();
+        a.chatReset();
+      }
+      const prompt = roundPrompt(a.observation(), first || env.ARENA_GOVERNOR_MEMORY !== "1");
       first = false;
       gov
         .ask(prompt)
@@ -147,6 +183,7 @@ if (colony && env.ARENA !== "0") {
         .catch((e) => world.logLine(`Governor round failed: ${e}`, "warn"))
         .finally(() => {
           busy = false;
+          endTurn();
         });
     });
   }

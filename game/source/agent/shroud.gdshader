@@ -18,6 +18,8 @@ uniform vec2 centre3 = vec2(-9999.0, -9999.0);
 uniform vec2 half_size3 = vec2(0.0, 0.0);
 uniform vec2 centre4 = vec2(-9999.0, -9999.0);
 uniform vec2 half_size4 = vec2(0.0, 0.0);
+uniform vec2 field_centre = vec2(-9999.0, -9999.0);  // the battlefield of a match: surveyed from orbit
+uniform vec2 field_half = vec2(0.0, 0.0);
 uniform float corner = 20.0;  // rounding of the explored square: the base's corners fade out
 uniform float edge = 9.0;  // width of the soft edge
 uniform float strength = 0.93;  // darkness of fully unexplored ground
@@ -44,6 +46,7 @@ void fragment() {
 	d = min(d, rounded_box(world.xz - centre2, half_size2, corner));
 	d = min(d, rounded_box(world.xz - centre3, half_size3, corner));
 	d = min(d, rounded_box(world.xz - centre4, half_size4, corner));
+	d = min(d, rounded_box(world.xz - field_centre, field_half, corner * 2.0));
 	d += (n - 0.5) * 10.0 + (n2 - 0.5) * 3.0;
 	float fog = smoothstep(0.0, edge, d) * strength;
 	vec2 ruv = (world.xz - reveal_rect.xy) / reveal_rect.z;

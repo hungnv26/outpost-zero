@@ -78,7 +78,7 @@ if listening "$ADAPTER_PORT"; then
 fi
 SOURCE=hermes
 [[ $FAKE == 1 ]] && SOURCE=fake
-(cd adapter && ADAPTER_SOURCE=$SOURCE HERMES_URL=$HERMES_URL nohup node src/main.ts < /dev/null > "$ROOT/.data/logs/adapter.log" 2>&1 & echo $! > "$ROOT/.data/adapter.pid"; disown)
+(cd adapter || exit 1; ADAPTER_SOURCE=$SOURCE HERMES_URL=$HERMES_URL nohup node src/main.ts < /dev/null > "$ROOT/.data/logs/adapter.log" 2>&1 & echo $! > "$ROOT/.data/adapter.pid"; disown)
 wait_http "http://127.0.0.1:$ADAPTER_PORT/health" "Adapter ($SOURCE)" 20
 
 echo

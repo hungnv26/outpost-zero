@@ -23,18 +23,21 @@ Env override for the game's world feed: `OUTPOST_ZERO_WS`. Compose root override
 Phases 0–6 of `docs/master-plan.md` are done: economy, buildings and colonists on the map, real
 work feeding the economy, the Arena (referee, Governor, colony tools, Mission Control lobby,
 teams, director, Elo), story Chapters I–IV with events, factions, MOTHER's shutdown, the four
-endings and MOTHER's voice; match maps. Pending: a frontier-model Arena team (needs
-`infra/providers.env`), Contest mode, the side-by-side replay.
+endings and MOTHER's voice; match maps. Pending: Contest mode, the side-by-side replay. Frontier-model teams are set up from the Arena Setup page.
 
 ## Run
 
 - `scripts/setup.sh` once (clones the pinned foundations into `vendor/`, builds Hermes images, installs
   Mission Control and the adapter). `vendor/`, `.data/`, `.env`, `infra/hermes.env` are gitignored.
 - `scripts/start.sh` (`--fake` for no LLM, `--no-game` for services only), `scripts/stop.sh`.
-- Adapter checks: `cd adapter && npm test && npm run typecheck` (37 tests, the balance check among them).
+- Adapter checks: `cd adapter && npm test && npm run typecheck` (42 tests, the balance check among them; `node tools/economy_sim.mjs 80 --map <id>` per battlefield).
 - Fast clock for play-testing: `COLONY_SECONDS_PER_HOUR=0.3`; `node tools/play_default.mjs 12` plays the default order over HTTP.
 - Arena: `scripts/arena.sh up B=ollama:agentrts-qwen3` (Hermes 8102, adapter 8781, Arena API 8782), `tools/match_director.mjs start --teams A,B --map duel ...`.
   Every team's adapter must run the same `COLONY_SECONDS_PER_HOUR` (export it before `arena.sh up`; the director refuses uneven clocks). A team's window: `OUTPOST_ZERO_WS=ws://127.0.0.1:8781/world godot --path game`.
+- Two Ollama teams on one Mac: start both adapters with `ARENA_LLM_LOCK=.data/teams/ollama.lock MOTHER_VOICE=0` (turn-taking, docs/arena.md §8c) and keep Ollama at one slot; `OLLAMA_NUM_PARALLEL=2` swaps this 16 GB Mac to a crawl. Game windows: `godot --path game --max-fps 30`, placed side by side with System Events (`-- --window=x,y,w,h` also places one).
+- Arena Setup page: `node tools/arena_setup.mjs` → http://127.0.0.1:8790 (also `arena-setup` in the workspace launch.json): provider, model and API key per team, apply, open windows, start or record a race. Keys in `infra/teams/<T>/api.key` (600, gitignored), relayed by the key gateway on :8795 so no key enters a container; the gateway also reports real token counts, which the match budget charges, and each team's Hermes keeps its data in `.data/hermes/<T>` (docs/arena.md §8f). Cloud keys can also go in `infra/providers.env` (template `infra/providers.env.example`).
+- Battlefields: ten random maps in `design/maps.json` (`tools/make_battlefields.mjs`, docs/arena.md §8d); the director picks one at random for 2+ teams, `node tools/match_director.mjs maps` lists them, `--map <id>` or `--map duel` chooses.
+- Record a match: `tools/record_match.sh [sols] [map] [objective]` (teams up first, ideally `COLONY_SECONDS_PER_HOUR=2`; default a `lifeline` race, docs/arena.md §8e) renders team A's window off screen with Godot's movie writer, framed on both bases, and saves `recordings/*.mp4` (gitignored); the colony runs faster in the video than the animations.
 - Screenshots: `godot --path game -- --capture-dir=DIR --capture-at=8 --quit-after-capture` (the CLI godot is not visible to desktop automation);
   `--camera-at=62,20 --camera-size=110` frames both bases of a duel.
 - Stop processes by their pid files (`.data/adapter.pid`, `.data/teams/<T>.pid`); a broad `pkill -f "node src/main.ts"` also kills Agent RTS's adapter.

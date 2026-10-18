@@ -51,6 +51,9 @@ var _decor = null
 var _scenery = null
 var _dressing = null
 var _shroud = null
+var _battlefield = null  # Battlefield.gd: the match map's structures and obstacles
+var _quit_match_id = null  # --quit-when-match-over: "" until a running match is seen, then its id
+var _field_terrain = ""  # the battlefield's terrain while a match runs on one; "" uses the layout's
 var _reveal_tick = 0.0
 var _pending_approvals = {}
 var _mission_id = ""
@@ -90,6 +93,8 @@ func _ready():
 	super()
 	_scenery = SceneryScript.new()
 	add_child(_scenery)
+	_battlefield = load("res://source/agent/Battlefield.gd").new()
+	add_child(_battlefield)
 	_dressing = BaseDressingScript.new()
 	add_child(_dressing)
 	_decor = WorldDecorScript.new()
@@ -262,7 +267,7 @@ static func _sig(def: Dictionary, keys: Array) -> String:
 # Bring the map in line with the layout: spawn, rebuild or remove buildings and agents.
 func _apply_layout(layout: Dictionary):
 	_layout = layout
-	_apply_terrain(layout.get("terrain", "mars"))
+	_apply_terrain(_field_terrain if _field_terrain != "" else layout.get("terrain", "mars"))
 	var human = $Players/Human
 	var wanted = {}
 	for def in layout.get("buildings", []):
@@ -395,6 +400,7 @@ func _set_daylight(day: bool, immediate := false):
 # Other teams' bases on the match map: each at its origin relative to ours, read from its
 # own adapter, clear of the shroud and the scenery, inside the camera's reach.
 func _set_remote_bases(arena):
+	_maybe_quit_after_match(arena)
 	var bases = arena.get("bases", []) if arena != null and not arena.is_empty() else []
 	var mine = _hud._colony_view.get("team", "") if _hud != null else ""
 	var my_team = arena.get("team", "A") if arena != null and not arena.is_empty() else "A"
@@ -431,15 +437,39 @@ func _set_remote_bases(arena):
 			if is_instance_valid(_remote_bases[team]):
 				_remote_bases[team].queue_free()
 			_remote_bases.erase(team)
+	# The battlefield: its terrain for every window, its structures and obstacles, its ground
+	# clear of the shroud (the whole box around the bases, with the wild between them).
+	var field = arena.get("battlefield") if arena != null and not arena.is_empty() else null
+	var spec = field if field is Dictionary else {}
+	_battlefield.set_battlefield(spec, _my_origin)
+	rects.append_array(_battlefield.footprints(spec, _my_origin))
 	if _shroud != null:
 		_shroud.set_extra_areas(areas)
+		if spec.is_empty():
+			_shroud.set_field_area(Vector2.ZERO, Vector2.ZERO)
+		else:
+			var lo = Vector2(INF, INF)
+			var hi = Vector2(-INF, -INF)
+			for b in bases:
+				var o = Vector2(float(b["origin"]["x"]) - _my_origin.x, float(b["origin"]["z"]) - _my_origin.z)
+				lo = Vector2(min(lo.x, o.x), min(lo.y, o.y))
+				hi = Vector2(max(hi.x, o.x + Departments.MAP_SIZE), max(hi.y, o.y + Departments.MAP_SIZE))
+			lo -= Vector2(26, 26)
+			hi += Vector2(26, 26)
+			_shroud.set_field_area((lo + hi) * 0.5, (hi - lo) * 0.5)
+	var field_terrain = str(spec.get("terrain", ""))
 	if _scenery != null and _scenery.exclude != rects:
 		_scenery.exclude = rects
-		_scenery.build(_terrain_id)
+		if field_terrain == _field_terrain:
+			_scenery.build(_terrain_id)
+	if field_terrain != _field_terrain:
+		_field_terrain = field_terrain
+		_battlefield.terrain = field_terrain
+		_apply_terrain(field_terrain if field_terrain != "" else _layout.get("terrain", "mars"))
 	# The ground and the camera reach the other bases.
 	var backdrop = map.find_child("Backdrop")
 	if backdrop != null:
-		var want = max(200.0, 2.0 * (far + 40.0))
+		var want = max(200.0, 2.0 * (far + 110.0))
 		if absf(backdrop.mesh.size.x - want) > 1.0:
 			backdrop.mesh.size = Vector2(want, want)
 	var reach = WORLD_MARGIN + max(0.0, far - Departments.MAP_SIZE) + 10.0
@@ -996,6 +1026,18 @@ func _focus_agent(agent_id):
 	_camera.set_position_safely(agent.global_position)
 
 
+# --quit-when-match-over (with --write-movie): close 12 s after the first running match ends, so
+# Godot finishes the movie file cleanly (tools/record_match.sh).
+func _maybe_quit_after_match(arena):
+	if _quit_match_id == null or arena == null or arena.is_empty():
+		return
+	if arena.get("status") == "running" and _quit_match_id == "":
+		_quit_match_id = str(arena.get("id", ""))
+	elif arena.get("status") == "finished" and _quit_match_id != "" and _quit_match_id != "done" and str(arena.get("id", "")) == _quit_match_id:
+		_quit_match_id = "done"
+		get_tree().create_timer(12.0).timeout.connect(func(): get_tree().quit())
+
+
 # Dev aid: --capture-dir=DIR --capture-at=5,12,20 [--quit-after-capture] [--open-settings|--open-build]
 # saves viewport screenshots at those seconds (used for automated visual checks).
 # --camera-at=x,z --camera-size=N frame a spot of the match map (e.g. both bases of a duel).
@@ -1011,6 +1053,8 @@ func _setup_capture():
 				times.append(float(t))
 		elif arg == "--quit-after-capture":
 			quit_after = true
+		elif arg == "--quit-when-match-over":
+			_quit_match_id = ""
 		elif arg.begins_with("--select-agent="):
 			get_tree().create_timer(3.0).timeout.connect(_hud.select_agent.bind(arg.substr(15)))
 		elif arg.begins_with("--select-building="):

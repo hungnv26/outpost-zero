@@ -2,13 +2,18 @@
 // Balance check for design/economy.json: plays the first sols of Outpost Zero hour by hour
 // with the default plan (adapter/src/economy-plan.ts) on the adapter's own Colony code and prints
 // the stock curves. Exits 1 if anyone dies.   Usage: node tools/economy_sim.mjs [sols] [--quiet]
-import { Colony, loadDefs } from "../adapter/src/economy.ts";
+// [--map <battlefield id>] plays under that battlefield's conditions (design/maps.json).
+import { readFileSync } from "node:fs";
+import { Colony, conditionsFrom, loadDefs } from "../adapter/src/economy.ts";
 import { playDefaultPlan } from "../adapter/src/economy-plan.ts";
 
 const SOLS = Number(process.argv[2] ?? 40);
 const QUIET = process.argv.includes("--quiet");
 const defs = loadDefs(new URL("../design/economy.json", import.meta.url));
-const c = new Colony(defs);
+const mapAt = process.argv.indexOf("--map");
+const field = mapAt > 0 ? JSON.parse(readFileSync(new URL("../design/maps.json", import.meta.url), "utf8")).battlefields?.[process.argv[mapAt + 1]] : null;
+if (mapAt > 0 && !field) throw new Error(`no battlefield ${process.argv[mapAt + 1]}`);
+const c = new Colony(defs, field ? Colony.initial(defs, 4217, conditionsFrom(field.conditions)) : undefined);
 const f = (n, w = 4) => String(Math.round(n)).padStart(w);
 const r = playDefaultPlan(c, SOLS, (col) => {
   const v = col.view();

@@ -92,15 +92,36 @@ export class HermesGovernor {
 }
 
 // What the Governor is told each hour (the observation follows as JSON).
+// What the objective counts, in one line the model cannot miss (small models build forever
+// unless told which call scores).
+function goalLine(observation: unknown): string | null {
+  const o = (observation ?? {}) as { match?: { objective?: string; mode?: string } | null; colonists?: { awake?: number; cryo?: number; beds?: number }; stocks?: { medicine?: number; materials?: number }; buildings?: { type: string; enabled: boolean }[] };
+  if (o.match?.objective === "lifeline") {
+    const names: Record<string, string> = { waterExtractor: "waterExtractor", hydroponics: "hydroponics", solarArray: "solarArray", scrapYard: "scrapYard", medBay: "medBay" };
+    const missing = Object.keys(names).filter((t) => !(o.buildings ?? []).some((b) => b.type === t && b.enabled));
+    return `GOAL: run all five lifelines: waterExtractor, hydroponics, solarArray, scrapYard, medBay${o.match?.mode === "race" ? " (the first team with all five wins)" : ""}. Still missing: ${missing.join(", ") || "none"}. You have ${Math.floor(o.stocks?.materials ?? 0)} materials; only a scrapYard makes more (from salvage), and one construction runs at a time.`;
+  }
+  const target = o.match?.objective === "sprint" ? 44 : o.match?.objective === "awakening" ? 100 : null;
+  if (!target) return null;
+  const awake = o.colonists?.awake ?? 0;
+  const beds = o.colonists?.beds ?? 0;
+  const med = Math.floor(o.stocks?.medicine ?? 0);
+  return `GOAL: colonists awake ${awake} of ${target}${o.match?.mode === "race" ? " (the first team there wins)" : ""}. colony_wake(count 1-8) is the move that scores: each colonist costs 2 medicine (you have ${med}) and a free bed (${Math.max(0, beds - awake)} free). Past 40 you need a Med Bay (medicine) and a second Habitat (beds), and water and food for everyone.`;
+}
+
 export function roundPrompt(observation: unknown, first: boolean): string {
+  const goal = goalLine(observation);
   const rules = first
     ? [
         "You are the Governor of Outpost Zero, a colony on a hostile planet. You play a match: keep the colonists alive and reach the objective before the sols run out.",
         "Act by calling the colony_* tools (colony_build, colony_wake, colony_toggle, colony_research, colony_repair, colony_autonomy, colony_study, colony_path, colony_shutdown_mother, colony_note). Each call is one action; at most a few per hour.",
         "The story advances in chapters: Chapter II opens the ruins (choose a path once), Chapter III splits the machines into factions as MOTHER's influence grows (you may shut MOTHER down), Chapter IV (Alien Tech plus a Relay Dish) unlocks the endings: Exodus (Launch Gantry), New Eden (180 awake, trust) or Singularity (Network Link). Extinction loses.",
-        "Rules of thumb: water and food first (Water Extractor, Hydroponics Bay), then a Solar Array and a Scrap Yard for materials; wake 8 colonists only when food and water production can carry them and beds are free; build a Research Lab and use colony_study to earn data; keep the reactor repaired.",
+        "Rules of thumb: water and food first (Water Extractor, Hydroponics Bay), then a Solar Array and a Scrap Yard for materials; colonists awake are the score in Awakening and Sprint: wake them (colony_wake) as soon as beds and medicine allow while food and water stocks last, and build production behind them; build a Research Lab and use colony_study to earn data; keep the reactor repaired.",
+        "Waking costs 2 medicine per colonist (a Med Bay makes more) and needs a free bed (each Habitat sleeps 40). The reactor alone gives about 30 kW: a Solar Array keeps pumps and greenhouses running as the colony grows.",
+        "match.battlefield, when set, is the map: its conditions multiply solar output, water production, expedition salvage and the dust-storm chance (below 1 is worse), so weigh builds by them.",
+        "Only tool calls change the colony: writing that you built something does nothing. Call the tool, read its result (ok or the reason it was refused), then report only what the tools did. One construction runs at a time; colony_wake can run alongside it. lastActions in the observation lists your previous calls.",
         "If nothing is affordable or useful this hour, do nothing and reply with one short line.",
       ]
     : ["New hour. Act if something useful is affordable; otherwise reply with one short line."];
-  return `${rules.join("\n")}\n\nObservation:\n${JSON.stringify(observation)}`;
+  return `${[...(goal ? [goal] : []), ...rules].join("\n")}\n\nObservation:\n${JSON.stringify(observation)}`;
 }

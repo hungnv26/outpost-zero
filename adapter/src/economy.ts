@@ -4,8 +4,8 @@
 // `ColonyRunner` drives it in real time and publishes it through the World.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-import { type BaseLayout, cloneLayout, KIND_DEPT, KIND_LABEL, KIND_MODEL, START_IDS, upsertBuilding } from "./layout.ts";
+import { dirname, join } from "node:path";
+import { type BaseLayout, cloneLayout, DEFAULT_LAYOUT, KIND_DEPT, KIND_LABEL, KIND_MODEL, START_IDS, upsertBuilding } from "./layout.ts";
 import type { ServerMessage } from "./contract.ts";
 import type { World } from "./world.ts";
 
@@ -138,9 +138,27 @@ export interface BuildingInst {
   builtAt: number; // hour
 }
 
+// The battlefield's conditions (design/maps.json battlefields): multipliers on solar output,
+// water production, expedition salvage and the dust-storm chance. Every team on the map gets the
+// same ones; a colony without a battlefield plays at 1.
+export interface Conditions {
+  solar: number;
+  water: number;
+  salvage: number;
+  storms: number;
+}
+export const NO_CONDITIONS: Conditions = { solar: 1, water: 1, salvage: 1, storms: 1 };
+
+export function conditionsFrom(c: unknown): Conditions {
+  const o = (c ?? {}) as Partial<Record<keyof Conditions, unknown>>;
+  const num = (v: unknown, lo: number, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : 1);
+  return { solar: num(o.solar, 0.25, 2), water: num(o.water, 0.25, 2), salvage: num(o.salvage, 0.25, 2), storms: num(o.storms, 0, 3) };
+}
+
 export interface ColonyState {
   version: 1;
   seed: number;
+  conditions?: Conditions; // absent: no battlefield
   hour: number; // hours since landing
   speed: Speed;
   awake: number;
@@ -176,6 +194,7 @@ export interface ColonyView {
   hour: number;
   speed: Speed;
   daylight: boolean;
+  conditions: Conditions;
   power: { supplyKw: number; demandKw: number; chargeKwh: number; chargeCapKwh: number; cut: string[] };
   stocks: Record<Stock, number>;
   caps: Partial<Record<Stock, number>>;
@@ -254,12 +273,13 @@ export class Colony {
     if (!state) this.card("landing");
   }
 
-  static initial(defs: EconomyDefs, seed = 4217): ColonyState {
+  static initial(defs: EconomyDefs, seed = 4217, conditions?: Conditions): ColonyState {
     const s = defs.start;
     const stocks = Object.fromEntries(STOCKS.map((k) => [k, s.stocks[k] ?? 0])) as Record<Stock, number>;
     return {
       version: 1,
       seed,
+      ...(conditions ? { conditions } : {}),
       hour: 0,
       speed: 1,
       awake: s.colonistsAwake,
@@ -424,6 +444,11 @@ export class Colony {
 
   private maxAutonomy(): number {
     return Math.max(...DEPTS.map((d) => this.state.autonomy[d]));
+  }
+
+  // The battlefield's conditions, or none.
+  cond(): Conditions {
+    return this.state.conditions ?? NO_CONDITIONS;
   }
 
   // A deterministic roll in [0, 1) from the seed and a counter, so replays and matches agree.
@@ -661,7 +686,7 @@ export class Colony {
     const s = this.state;
     const r = this.roll();
     const lost = kind === "survey" && r < e.lossChance * (s.events.dustStormSols > 0 ? this.defs.events.dustStorm.expeditionLossFactor : 1);
-    let salvage = Math.round(e.salvage.min + this.roll() * (e.salvage.max - e.salvage.min));
+    let salvage = Math.round((e.salvage.min + this.roll() * (e.salvage.max - e.salvage.min)) * this.cond().salvage);
     if (kind === "scout") salvage = Math.round(salvage / 2);
     const blueprint = kind === "survey" && this.roll() < e.blueprintChance;
     const artifact = (s.chapter !== "I") && this.roll() < e.artifactChanceAfterChapterII;
@@ -729,7 +754,7 @@ export class Colony {
     // Power supply.
     const gen = D.buildings.landingModule.powerGenKw ?? 0;
     let supply = gen * s.reactor * (s.events.reactorFaultSols > 0 ? D.events.reactorFault.outputFactor : 1);
-    const solarFactor = s.events.dustStormSols > 0 ? D.events.dustStorm.solarFactor : 1;
+    const solarFactor = (s.events.dustStormSols > 0 ? D.events.dustStorm.solarFactor : 1) * this.cond().solar;
     for (const b of s.buildings) {
       const d = D.buildings[b.type];
       if (b.enabled && d.powerGenKwPeak && daylight) supply += d.powerGenKwPeak * solarFactor;
@@ -789,7 +814,7 @@ export class Colony {
       crews[b.id] = d.crew ?? 0;
       for (const [r, v] of Object.entries(d.in ?? {})) this.add(r as Stock, -v);
       const yieldFactor = b.type === "excavationSite" ? (s.story.path ? this.defs.paths[s.story.path].excavationYield ?? 1 : 1) : 1;
-      for (const [r, v] of Object.entries(d.out)) this.add(r as Stock, v * (d.machinesOnly ? eff : 1) * yieldFactor);
+      for (const [r, v] of Object.entries(d.out)) this.add(r as Stock, v * (d.machinesOnly ? eff : 1) * yieldFactor * (r === "water" ? this.cond().water : 1));
       producing.add(b.id);
     }
 
@@ -914,7 +939,7 @@ export class Colony {
     if (s.events.dustStormSols > 0) {
       s.events.dustStormSols--;
       if (s.events.dustStormSols === 0) this.note("the dust storm has passed");
-    } else if (this.roll() < E.dustStorm.chancePerSol) {
+    } else if (this.roll() < E.dustStorm.chancePerSol * this.cond().storms) {
       s.events.dustStormSols = E.dustStorm.solsMin + Math.floor(this.roll() * (E.dustStorm.solsMax - E.dustStorm.solsMin + 1));
       this.card("dustStorm");
     }
@@ -1004,6 +1029,7 @@ export class Colony {
       hour: this.hourOfSol,
       speed: s.speed,
       daylight: this.daylight,
+      conditions: this.cond(),
       power: { supplyKw: s.last.supplyKw, demandKw: s.last.demandKw, chargeKwh: r1(s.stocks.charge), chargeCapKwh: this.cap("charge"), cut: s.last.cut },
       stocks: Object.fromEntries(STOCKS.map((r) => [r, r1(s.stocks[r])])) as Record<Stock, number>,
       caps,
@@ -1100,6 +1126,9 @@ export class ColonyRunner {
   readonly colony: Colony;
   private world: World;
   private path: string | null;
+  // Set while the key gateway reports the provider's real token counts (Arena.providerUsage);
+  // Hermes' own estimates are then not charged, or every mission would count twice.
+  realTokens = false;
   private timer: NodeJS.Timeout | null = null;
   private secondsPerHour: number;
   // Saves the layout and lets the source know (main.ts wires it to the base file and Hermes).
@@ -1180,7 +1209,7 @@ export class ColonyRunner {
       }
       case "resource.update": {
         const used = m.resources.tokensUsed;
-        if (used > this.lastTokens) c.useCompute(used - this.lastTokens);
+        if (used > this.lastTokens && !this.realTokens) c.useCompute(used - this.lastTokens);
         if (used !== this.lastTokens) this.lastTokens = used;
         return;
       }
@@ -1238,6 +1267,21 @@ export class ColonyRunner {
       next.buildings = next.buildings.filter((b) => b.status !== "building");
       void this.adoptLayout(next);
     }
+  }
+
+  // A match starts every team from the same crash site (docs/arena.md §4): the buildings and
+  // spots go back to the default base, the machines stay (moved home to the Command Core if
+  // their building is gone). The old base is kept next to colony.json as base.before-match.json.
+  freshBase(): void {
+    const l = this.world.layout;
+    if (this.path) writeFileSync(join(dirname(this.path), "base.before-match.json"), JSON.stringify(l, null, 2));
+    const fresh = cloneLayout(DEFAULT_LAYOUT);
+    const next = cloneLayout(l);
+    next.buildings = fresh.buildings;
+    next.spots = fresh.spots;
+    const ids = new Set(next.buildings.map((b) => b.id));
+    for (const a of next.agents) if (!ids.has(a.home)) a.home = "command_centre";
+    void this.adoptLayout(next);
   }
 
   private async adoptLayout(next: BaseLayout): Promise<void> {
