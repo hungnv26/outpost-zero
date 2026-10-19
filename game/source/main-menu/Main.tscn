@@ -56,6 +56,11 @@ text = "OPTIONS"
 layout_mode = 2
 text = "CREDITS"
 
+[node name="OutpostZeroButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
+layout_mode = 2
+tooltip_text = "Switch to Outpost Zero, the colony game with real AI agents (restarts the game)"
+text = "Outpost Zero"
+
 [node name="Button4" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
 text = "QUIT"
@@ -64,3 +69,4 @@ text = "QUIT"
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button2" to="." method="_on_options_button_pressed"]
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button3" to="." method="_on_credits_button_pressed"]
 [connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button4" to="." method="_on_quit_button_pressed"]
+[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/OutpostZeroButton" to="." method="_on_outpost_zero_button_pressed"]

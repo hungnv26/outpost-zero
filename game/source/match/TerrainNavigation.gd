@@ -5,6 +5,10 @@ const DOMAIN = Constants.Match.Navigation.Domain.TERRAIN
 var _earliest_frame_to_perform_next_rebake = null
 var _is_baking = false
 var _map_geometry = NavigationMeshSourceGeometryData3D.new()
+# Godot 4.4+ bakes asynchronously and clears the mesh it bakes into, so baking into the live mesh
+# left the map without walkable area until the bake finished: unit placement then saw nothing
+# navigable and searched endlessly (the match froze). Bake into a copy and swap it in when done.
+var _baking_mesh: NavigationMesh = null
 
 @onready var navigation_map_rid = get_world_3d().navigation_map
 
@@ -68,8 +72,9 @@ func _rebake():
 	# add pre-parsed map geometry
 	full_geometry.merge(_map_geometry)
 
+	_baking_mesh = _navigation_region.navigation_mesh.duplicate()
 	NavigationServer3D.bake_from_source_geometry_data_async(
-		_navigation_region.navigation_mesh, full_geometry, _on_bake_finished
+		_baking_mesh, full_geometry, _on_bake_finished
 	)
 
 
@@ -111,5 +116,8 @@ func _on_schedule_navigation_rebake(domain):
 
 
 func _on_bake_finished():
+	if _baking_mesh != null:
+		_navigation_region.navigation_mesh = _baking_mesh
+		_baking_mesh = null
 	_sync_navmesh_changes()
 	_is_baking = false

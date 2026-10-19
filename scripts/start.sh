@@ -3,6 +3,7 @@
 #   scripts/start.sh            full stack with real agents
 #   scripts/start.sh --fake     scripted demo missions (no Hermes, no LLM); Mission Control optional
 #   scripts/start.sh --no-game  services only (open the game yourself: godot --path game)
+#   scripts/start.sh --classic  Open RTS, the original deathmatch: no services, just the game
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
@@ -14,6 +15,13 @@ for arg in "$@"; do
   case "$arg" in
     --fake) FAKE=1 ;;
     --no-game) GAME=0 ;;
+    --classic)
+      # Open RTS needs no agents, adapter or model (docs/open-rts-mode.md).
+      mkdir -p .data/logs
+      nohup godot --path game -- --mode=open-rts < /dev/null > .data/logs/game.log 2>&1 &
+      disown
+      echo "Open RTS launched (the original deathmatch; switch back from its main menu)."
+      exit 0 ;;
     *) echo "unknown option $arg"; exit 1 ;;
   esac
 done
@@ -88,7 +96,7 @@ echo "  Adapter          http://127.0.0.1:$ADAPTER_PORT/state"
 
 if [[ $GAME == 1 ]]; then
   echo "==> Game"
-  nohup godot --path game < /dev/null > .data/logs/game.log 2>&1 &
+  nohup godot --path game -- --mode=outpost-zero < /dev/null > .data/logs/game.log 2>&1 &
   disown
   echo "  launched (close the window to quit; scripts/stop.sh stops the services)"
 fi

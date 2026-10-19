@@ -292,6 +292,11 @@ func _on_battlegroup_died(battlegroup):
 	if not is_inside_tree():
 		return
 	_battlegroups.erase(battlegroup)
+	# Outpost Zero fix: re-arm. Upstream never formed a new battlegroup after losing one, so a
+	# computer player that lost its armies stopped producing and the match could stall forever.
+	if _battlegroup_under_forming == null:
+		_try_creating_new_battlegroup()
+		_enforce_primary_units_production()
 
 
 func _on_refresh_timer_timeout():

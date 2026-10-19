@@ -41,7 +41,7 @@ console.log(`${(bx + 44) / 2},${(bz + 44) / 2} ${Math.round(Math.hypot(bx, bz) *
 
 avi="$ROOT/.data/rec/match-$stamp.avi"
 echo "Recording $map_id from team A's window (camera $cam, size $size) ..."
-godot --path game --write-movie "$avi" --fixed-fps "$FPS" --resolution 1920x1080 --windowed -- \
+godot --path game --write-movie "$avi" --fixed-fps "$FPS" --resolution 1920x1080 --windowed -- --mode=outpost-zero \
   --camera-at="$cam" --camera-size="$size" --quit-when-match-over > .data/logs/record.log 2>&1 || true
 
 out="recordings/outpost-zero-$stamp-$map_id.mp4"

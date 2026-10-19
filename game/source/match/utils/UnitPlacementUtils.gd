@@ -1,5 +1,7 @@
 enum { VALID, COLLIDES_WITH_AGENT, NOT_NAVIGABLE }
 
+const MAX_SEARCH_DISTANCE_M = 150.0
+
 
 static func find_valid_position_radially(
 	starting_position: Vector3, radius: float, navigation_map_rid: RID, scene_tree
@@ -38,6 +40,10 @@ static func find_valid_position_radially_yet_skip_starting_radius(
 		var ring_distance_from_starting_position: float = (
 			starting_distance + radius * 0.5 * ring_number
 		)
+		# Safety net: never search past any map's size (an empty navigation map once made this
+		# loop run for minutes); fall back to the starting point.
+		if ring_distance_from_starting_position > MAX_SEARCH_DISTANCE_M:
+			return starting_position_yless
 		var rotation_angle_rad = asin((radius + spacing) / ring_distance_from_starting_position)
 		var radial_positions = []
 		var next_rotation_angle_rad = 0.0

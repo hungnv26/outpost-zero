@@ -357,7 +357,7 @@ async function api(req, res, path) {
       for (const t of TEAMS) {
         killPidFile(join(ROOT, ".data", `game-${t}.pid`));
         const i = TEAMS.indexOf(t);
-        const pid = spawnDetached("godot", ["--path", "game", "--max-fps", "30"], `game-${t}.log`, i === 0 ? {} : { OUTPOST_ZERO_WS: `ws://127.0.0.1:${8771 + 10 * i}/world` });
+        const pid = spawnDetached("godot", ["--path", "game", "--max-fps", "30", "--", "--mode=outpost-zero"], `game-${t}.log`, i === 0 ? {} : { OUTPOST_ZERO_WS: `ws://127.0.0.1:${8771 + 10 * i}/world` });
         writeFileSync(join(ROOT, ".data", `game-${t}.pid`), String(pid));
       }
       return send(200, { ok: true });

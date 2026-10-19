@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Outpost Zero"
-run/main_scene="res://source/agent/AgentMatch.tscn"
+run/main_scene="res://source/boot/Boot.tscn"
 config/features=PackedStringArray("4.3", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 boot_splash/image="res://assets/logos/godot_logo_vertical_monochrome_dark_312x357.png"

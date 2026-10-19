@@ -2217,6 +2217,27 @@ func _build_settings():
 	zoom_row.add_child(fit)
 	v.add_child(zoom_row)
 	v.add_child(_label("Lower 3D resolution runs faster on large screens; text stays sharp.", 12, MUTED))
+	v.add_child(HSeparator.new())
+	# Game mode (docs/open-rts-mode.md): Open RTS is the original deathmatch this game is built on.
+	# Switching restarts the game; the colony and the services keep running.
+	var mode_row = HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 10)
+	var ml = _label("Game mode", 15)
+	ml.custom_minimum_size = Vector2(130, 0)
+	mode_row.add_child(ml)
+	var switch = _button("Switch to Open RTS")
+	switch.custom_minimum_size = Vector2(0, 30)
+	switch.pressed.connect(
+		func():
+			if switch.text == "Switch to Open RTS":
+				switch.text = "Confirm: restart as Open RTS"
+				get_tree().create_timer(5.0).timeout.connect(func(): switch.text = "Switch to Open RTS")
+			else:
+				preload("res://source/boot/GameMode.gd").switch_to(get_tree(), "open-rts")
+	)
+	mode_row.add_child(switch)
+	v.add_child(mode_row)
+	v.add_child(_label("Open RTS is the original real-time strategy game: build an army and destroy the other players. It needs no AI services.", 12, MUTED))
 
 
 func _chip_row(parent: Control, title: String, key: String, options: Array):

@@ -35,6 +35,13 @@ budget. [docs/arena.md](docs/arena.md).
 |---|---|---|
 | ![Power, water, food, materials, parts, medicine, colonists, data, compute, trust and influence, live](docs/screenshots/colony-strip.jpg) | ![The catalog with costs, and research tiers bought with data](docs/screenshots/build-mode.jpg) | ![Team B's window with both teams on the scoreboard](docs/screenshots/arena-two-teams.jpg) |
 
+## Two modes
+
+Outpost Zero is built on [Open RTS](https://github.com/lampe-games/godot-open-rts), a Godot 4
+deathmatch with no story, and the original game is still playable: **Settings, Game mode, Switch
+to Open RTS** in the colony, or `scripts/start.sh --classic` (no AI services needed). Its main
+menu has an **Outpost Zero** button to come back. [docs/open-rts-mode.md](docs/open-rts-mode.md).
+
 ## How it works
 
 | Part | Project | Runs on | Job |
