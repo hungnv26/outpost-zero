@@ -1,47 +1,52 @@
 extends Node
 
 # The start scene: picks the mode (GameMode.gd), applies its flags and window title, and opens
-# Outpost Zero's colony or Open RTS's logos and main menu.
-# `-- --mode=open-rts --classic-autoplay=MAP [--classic-speed=N]` plays an unattended match of
-# computer players on that map (tools/classic_smoke.sh) and quits with the result.
+# Outpost Zero's colony or Outpost War's logos and main menu.
+# `-- --mode=outpost-war --war-autoplay=MAP [--war-speed=N]` plays an unattended match of
+# computer players on that map (tools/war_smoke.sh) and quits with the result.
 
 const GameMode = preload("res://source/boot/GameMode.gd")
 
 
 func _ready():
 	var mode = GameMode.current()
+	GameMode.running = mode
 	GameMode.apply_flags(mode)
-	if DisplayServer.get_name() != "headless":
-		DisplayServer.window_set_title(GameMode.TITLES[mode])
+	GameMode.keep_title(get_tree())
 	var autoplay = ""
 	var speed = 1.0
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--classic-autoplay="):
-			autoplay = arg.substr(19)
-		elif arg.begins_with("--classic-speed="):
-			speed = float(arg.substr(16))
-	if mode == GameMode.OPEN_RTS:
+		if arg.begins_with("--war-autoplay="):
+			autoplay = arg.substr(15)
+		elif arg.begins_with("--war-speed="):
+			speed = float(arg.substr(12))
+	if mode == GameMode.OUTPOST_WAR:
 		_setup_capture()
-	# Test hook (tools/classic_smoke.sh): switch modes 4 s after start, as the buttons do.
+	# Test hook (tools/war_smoke.sh): switch modes 4 s after start, as the buttons do.
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--test-switch-to="):
 			var target = arg.substr(17)
 			get_tree().create_timer(4.0).timeout.connect(GameMode.switch_to.bind(get_tree(), target))
-	if mode == GameMode.OPEN_RTS and autoplay != "":
+	if mode == GameMode.OUTPOST_WAR and autoplay != "":
 		_autoplay.call_deferred(autoplay, speed)
 		return
+	if mode == GameMode.OUTPOST_WAR:
+		# Battles and their settings come from the Arena Setup page (docs/outpost-war.md).
+		var client = load("res://source/war/BattleClient.gd").new()
+		client.name = "BattleClient"
+		get_tree().root.add_child.call_deferred(client)
 	get_tree().change_scene_to_file.call_deferred(GameMode.SCENES[mode])
 
 
 func _autoplay(map_name: String, speed: float):
-	var smoke = load("res://source/boot/ClassicSmoke.gd").new()
+	var smoke = load("res://source/boot/WarSmoke.gd").new()
 	smoke.map_name = map_name
 	smoke.speed = speed
 	get_tree().root.add_child(smoke)
 	queue_free()
 
 
-# Screenshots in Open RTS mode (Outpost Zero's scene has its own): `--capture-dir=DIR
+# Screenshots in Outpost War mode (Outpost Zero's scene has its own): `--capture-dir=DIR
 # --capture-at=4,20 [--quit-after-capture]`, taken by a node that outlives scene changes.
 func _setup_capture():
 	var capture = load("res://source/boot/Capture.gd").new()

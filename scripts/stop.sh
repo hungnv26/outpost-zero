@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Stop the adapter, Mission Control (if started by start.sh) and the Hermes containers.
+# Stop the adapter, the battle service, Arena Setup, Mission Control (if started by start.sh) and Hermes.
 #   scripts/stop.sh           stop everything
 #   scripts/stop.sh --keep-hermes
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 
-for name in adapter mission-control; do
+for name in adapter battle arena-setup mc-open mission-control; do
   pidfile=".data/$name.pid"
   if [[ -f $pidfile ]]; then
     pid=$(cat "$pidfile")
@@ -17,6 +17,13 @@ for name in adapter mission-control; do
       echo "stopped $name"
     fi
     rm -f "$pidfile"
+  fi
+done
+
+# Mission Control's server can outlive its launcher shell: stop whatever of ours still holds its port.
+for pid in $(lsof -tiTCP:"${MC_INTERNAL_PORT:-3011}" -sTCP:LISTEN 2>/dev/null); do
+  if [[ "$(lsof -p "$pid" -a -d cwd -Fn 2>/dev/null | tail -1)" == "n$ROOT/vendor/mission-control"* ]]; then
+    kill "$pid" 2>/dev/null && echo "stopped mission-control server"
   fi
 done
 

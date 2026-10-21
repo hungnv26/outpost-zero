@@ -1,3 +1,4 @@
+import type { GameSettings } from "./settings-card.ts";
 // World-state contract between the adapter and game clients.
 // The adapter is the only writer; the game renders and sends back a small set of commands.
 // Transport: WebSocket, JSON text frames. Server sends `snapshot` on connect, then events.
@@ -156,6 +157,7 @@ export interface ArenaInfo {
 export interface WorldSnapshot {
   contract: number;
   arena?: ArenaInfo | null;
+  settings?: GameSettings | null; // the Mission Control settings card (settings-card.ts)
   source: string; // "fake" | "hermes"
   mission: Mission | null;
   agents: Agent[];
@@ -194,6 +196,7 @@ export type ServerEvent =
   | { type: "layout.update"; layout: BaseLayout }
   | { type: "agent.removed"; agentId: string }
   | { type: "arena.update"; arena: ArenaInfo | null }
+  | { type: "settings.update"; settings: GameSettings | null }
   | { type: "error"; message: string };
 
 export type ServerMessage = ServerEvent & { seq: number };

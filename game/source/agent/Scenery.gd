@@ -28,6 +28,7 @@ const ROCK_TINT = {
 }
 
 var map_size = 44.0
+var map_depth = -1.0  # z extent when the map is not square (Outpost War); map_size otherwise
 var exclude = []  # [Rect2] in world xz: other teams' bases on the match map (no props there)
 
 
@@ -48,7 +49,7 @@ func build(terrain: String):
 	var target = int(spec["count"] * 2.2)  # the land past the base is bigger now
 	while placed < target and tries < target * 20:
 		tries += 1
-		var p = Vector3(rng.randf_range(-52, map_size + 52), 0, rng.randf_range(-52, map_size + 52))
+		var p = Vector3(rng.randf_range(-52, map_size + 52), 0, rng.randf_range(-52, _depth() + 52))
 		var out = _outside(p)
 		if out < 0.8:
 			continue
@@ -89,8 +90,12 @@ func build(terrain: String):
 # How far outside the map a point is (0 inside).
 func _outside(p: Vector3) -> float:
 	var dx = max(0.0, max(-p.x, p.x - map_size))
-	var dz = max(0.0, max(-p.z, p.z - map_size))
+	var dz = max(0.0, max(-p.z, p.z - _depth()))
 	return Vector2(dx, dz).length()
+
+
+func _depth() -> float:
+	return map_depth if map_depth > 0.0 else map_size
 
 
 # The dirt roads that leave the base through its gates (WorldDecor) stay clear.

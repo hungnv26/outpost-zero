@@ -1,22 +1,17 @@
 extends Control
 
+# Outpost War's waiting screen: no buttons at all. Battles are set up on the Arena Setup page
+# (docs/outpost-war.md); this screen shows the title and what the link to it is doing. Close the
+# window to quit.
 
-func _on_play_button_pressed():
-	get_tree().change_scene_to_file("res://source/main-menu/Play.tscn")
-
-
-func _on_options_button_pressed():
-	get_tree().change_scene_to_file("res://source/main-menu/Options.tscn")
+@onready var _status = find_child("Status")
 
 
-func _on_credits_button_pressed():
-	get_tree().change_scene_to_file("res://source/main-menu/Credits.tscn")
+func _ready():
+	var client = get_tree().root.get_node_or_null("BattleClient")
+	if client != null:
+		_status.text = client.status
+		client.status_changed.connect(func(text): _status.text = text)
+	else:
+		_status.text = "Not linked to the battle service (open Outpost War from Arena Setup, http://127.0.0.1:8790)"
 
-
-# Outpost Zero: the colony game this project grew into (docs/open-rts-mode.md). Restarts the game.
-func _on_outpost_zero_button_pressed():
-	preload("res://source/boot/GameMode.gd").switch_to(get_tree(), "outpost-zero")
-
-
-func _on_quit_button_pressed():
-	get_tree().quit()

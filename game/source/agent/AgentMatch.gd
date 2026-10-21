@@ -11,6 +11,7 @@ const WORLD_MARGIN = 28.0  # how far past the base the camera may travel (into t
 const BaseDressingScript = preload("res://source/agent/BaseDressing.gd")
 const Models = preload("res://source/agent/Models.gd")
 const CHARACTER_HEIGHT = 1.7  # animated characters are fitted by height
+const GameMode = preload("res://source/boot/GameMode.gd")
 const SceneryScript = preload("res://source/agent/Scenery.gd")
 const HudUi = preload("res://source/agent/hud/Ui.gd")
 const Departments = preload("res://source/agent/Departments.gd")
@@ -134,7 +135,6 @@ func _ready():
 	)
 	_replay.finished.connect(_end_replay)
 	_hud.set_connection(false)
-	_hud.settings_ref = display_settings
 	_hud.camera_ref = _camera
 	_hud.setting_changed.connect(_on_setting_changed)
 	display_settings.apply_render(get_viewport())
@@ -691,6 +691,30 @@ func _compute_label_scale():
 	return max(0.25, _window_factor() * SettingsScript.TEXT_BASE * display_settings.label_size)
 
 
+# Settings from the Mission Control settings card (docs/settings.md), relayed by the adapter. Only
+# values that differ are applied; tool windows (captures, movies, placed team windows) keep their
+# own display, and a window started with --mode keeps its game.
+func _apply_mc_settings(s):
+	if not (s is Dictionary):
+		return
+	GameMode.follow(get_tree(), str(s.get("game", "")))
+	if GameMode.tool_window():
+		return
+	if s.has("fullscreen") and bool(s["fullscreen"]) != display_settings.fullscreen:
+		_on_setting_changed("fullscreen", bool(s["fullscreen"]))
+	if s.has("window_size") and s["window_size"] is Array and s["window_size"].size() == 2:
+		var size = Vector2i(int(s["window_size"][0]), int(s["window_size"][1]))
+		if size != display_settings.window_size:
+			if display_settings.fullscreen:
+				display_settings.window_size = size  # used when the card switches back to a window
+				display_settings.save_settings()
+			else:
+				_on_setting_changed("window_size", size)
+	for key in ["render_scale", "msaa", "text_size", "label_size", "zoom"]:
+		if s.has(key) and absf(float(s[key]) - float(display_settings.get(key))) > 0.001:
+			_on_setting_changed(key, s[key] if key != "msaa" else int(s[key]))
+
+
 func _on_setting_changed(key, value):
 	match key:
 		"fullscreen":
@@ -716,7 +740,6 @@ func _on_setting_changed(key, value):
 			display_settings.zoom = display_settings.clamp_zoom(value)
 			_camera.set_size_safely(display_settings.zoom)
 	display_settings.save_settings()
-	_hud.show_settings(display_settings, _camera.size)
 
 
 func _apply_ui_scale():
@@ -752,6 +775,7 @@ func _on_message(msg):
 			_hud.apply_snapshot(world)
 			_hud.set_arena(world.get("arena"))
 			_set_remote_bases(world.get("arena"))
+			_apply_mc_settings(world.get("settings"))
 			_apply_colony(world.get("resources", {}).get("colony"))
 			_hud.set_connection(true, world.get("source", ""))
 			for a in world.get("agents", []):
@@ -771,6 +795,8 @@ func _on_message(msg):
 		"arena.update":
 			_hud.set_arena(msg.get("arena"))
 			_set_remote_bases(msg.get("arena"))
+		"settings.update":
+			_apply_mc_settings(msg.get("settings"))
 		"agent.removed":
 			_remove_agent(msg.get("agentId", ""))
 		"error":
@@ -1038,7 +1064,7 @@ func _maybe_quit_after_match(arena):
 		get_tree().create_timer(12.0).timeout.connect(func(): get_tree().quit())
 
 
-# Dev aid: --capture-dir=DIR --capture-at=5,12,20 [--quit-after-capture] [--open-settings|--open-build]
+# Dev aid: --capture-dir=DIR --capture-at=5,12,20 [--quit-after-capture] [--open-build]
 # saves viewport screenshots at those seconds (used for automated visual checks).
 # --camera-at=x,z --camera-size=N frame a spot of the match map (e.g. both bases of a duel).
 func _setup_capture():
@@ -1059,8 +1085,6 @@ func _setup_capture():
 			get_tree().create_timer(3.0).timeout.connect(_hud.select_agent.bind(arg.substr(15)))
 		elif arg.begins_with("--select-building="):
 			get_tree().create_timer(3.0).timeout.connect(_hud.select_building.bind(arg.substr(18)))
-		elif arg == "--open-settings":
-			_hud._toggle_settings.call_deferred()
 		elif arg.begins_with("--tab="):
 			_hud._switch_tab.call_deferred(arg.substr(6))
 		elif arg == "--open-build":

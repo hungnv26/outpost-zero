@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Arena Setup · Outpost Zero</title>
+<title>Arena Setup</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* One column of numbered steps: teams, match, apply, play; the live board under them. */
@@ -53,15 +53,69 @@ td .chip { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
 .result { font: 700 20px/1.2 var(--display); letter-spacing: .03em; }
 video { width: 100%; max-width: 720px; border-radius: 6px; border: 1px solid var(--line); background: #000; }
 .note { font-size: 12.5px; color: var(--muted); }
+[hidden] { display: none !important; }
+.view { display: grid; gap: 22px; }
+.games { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+.games button { background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0; padding: 10px 14px; margin-bottom: -1px; font: 700 18px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.games button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.team.war { border-top-color: var(--pc); }
+.team.war h3 { color: var(--pc); display: flex; align-items: center; gap: 8px; }
+.mini { font-size: 12px; color: var(--muted); }
+.lines { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
   <h1>Arena Setup</h1>
-  <p>Give each team a model and an API key, bring both teams up, then start a race. Keys stay on this Mac in files only you can read; the teams' agents reach the providers through a local gateway and never see a key.</p>
+  <p id="intro-zero">Give each team a model and an API key, bring both teams up, then start a race. Keys stay on this Mac in files only you can read; the teams' agents reach the providers through a local gateway and never see a key.</p>
+  <p id="intro-war" hidden>Set up an Outpost War battle: the map, how many players, and who plays each colour: an AI model, the scripted computer player or you. Start it here; the game window plays it and the result comes back to this page.</p>
 </header>
 
+<nav class="games" role="tablist" aria-label="Game">
+  <button role="tab" id="tab-zero" aria-selected="true" aria-controls="zero-view">Outpost Zero</button>
+  <button role="tab" id="tab-war" aria-selected="false" aria-controls="war-view">Outpost War</button>
+</nav>
+
+<div class="view" id="war-view" role="tabpanel" aria-labelledby="tab-war" hidden>
+<section class="step">
+  <h2><span class="n">1</span>Battle <small>Map, players and rules</small></h2>
+  <div class="row">
+    <label>Map <select id="war-map"></select></label>
+    <label>Battlefield <select id="war-field"></select></label>
+    <label>Players <select id="war-count"></select></label>
+    <label>Speed
+      <select id="war-speed">
+        <option value="0.25">0.25× (slow)</option><option value="0.5">0.5× (good for AI models)</option><option value="1">1× (normal)</option><option value="2">2×</option><option value="3">3×</option><option value="4">4× (fast)</option>
+      </select>
+    </label>
+    <label>Time limit (game minutes, 0 = none) <input id="war-minutes" type="number" min="0" max="240" step="1"></label>
+    <label>Token budget per AI model <input id="war-budget" type="number" min="10000" step="10000"></label>
+  </div>
+  <div class="teams" id="war-players"></div>
+  <div class="note">Each player is an AI model, Outpost War's scripted computer player, or you (one human at most). Keys are kept per provider, so one Anthropic key serves every Claude player; they stay on this Mac in files only you can read, and the models reach their providers through the local gateway.</div>
+  <div class="row">
+    <label>Screen <select id="war-screen"><option value="window">Window</option><option value="fullscreen">Fullscreen</option></select></label>
+    <label>Mouse <select id="war-mouse"><option value="free">Free</option><option value="restricted">Kept inside the window</option></select></label>
+  </div>
+  <label class="check"><input id="war-fog" type="checkbox"> Fog of war on screen (AI models always see only what their own units see)</label>
+  <div class="buttons"><button id="war-save">Save battle settings</button><span class="msg" id="war-settings-msg"></span></div>
+</section>
+
+<section class="step">
+  <h2><span class="n">2</span>Play <small>Open the game window and start the battle</small></h2>
+  <div class="buttons">
+    <button id="war-window">Open Outpost War window</button>
+    <button class="primary" id="war-start">Start battle</button>
+    <button id="war-stop">Stop battle</button>
+    <span class="msg" id="war-play-msg"></span>
+  </div>
+  <div class="dots" id="war-dots"></div>
+  <div id="war-board"></div>
+</section>
+</div>
+
+<div class="view" id="zero-view" role="tabpanel" aria-labelledby="tab-zero">
 <section class="step">
   <h2><span class="n">1</span>Teams <small>Provider, model and API key for each side</small></h2>
   <div class="teams" id="teams"></div>
@@ -112,11 +166,14 @@ video { width: 100%; max-width: 720px; border-radius: 6px; border: 1px solid var
   <div class="note" id="recordings"></div>
 </section>
 </div>
+</div>
 
 <script>
 const TOKEN = "__TOKEN__";
 const PROVIDERS = __PROVIDERS__;
 const MAPS = __MAPS__;
+const WAR = __WAR__;
+const CHIP = { blue: "#3f74d8", red: "#d65249", green: "#4fa85a", purple: "#8b5fd1", darkgreen: "#2f6b3c", khaki: "#bfae78", navy: "#2b3c78", turquoise: "#3cbcb8" };
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 let filled = false;
@@ -157,7 +214,7 @@ $("map").innerHTML = `<option value="random">Random battlefield</option>` + MAPS
 
 function syncProvider(t) {
   const p = $("prov-" + t).value;
-  $("models-" + t).innerHTML = (PROVIDERS[p]?.models ?? []).map((m) => `<option value="${esc(m)}">`).join("");
+  $("models-" + t).innerHTML = (typeof modelsOf === "function" ? modelsOf(p) : PROVIDERS[p]?.models ?? []).map((m) => `<option value="${esc(m)}">`).join("");
   $("keyrow-" + t).hidden = p === "ollama";
   $("test-" + t).hidden = p === "ollama";
 }
@@ -213,7 +270,193 @@ $("stop").addEventListener("click", async () => {
   try { await post("/api/stop"); say("play-msg", "Match stopped"); } catch (e) { say("play-msg", e.message, "err"); }
 });
 
+// ---- the game switch ----
+function showGame(g) {
+  for (const x of ["zero", "war"]) {
+    $("tab-" + x).setAttribute("aria-selected", String(x === g));
+    $(x + "-view").hidden = x !== g;
+    $("intro-" + x).hidden = x !== g;
+  }
+  try { localStorage.setItem("arena-setup-game", g); } catch {}
+}
+$("tab-zero").addEventListener("click", () => showGame("zero"));
+$("tab-war").addEventListener("click", () => showGame("war"));
+try { if (localStorage.getItem("arena-setup-game") === "war") showGame("war"); } catch {}
+if (location.hash === "#war") showGame("war");
+
+// ---- Outpost War ----
+let war = null; // the form's state: { map, count, players: [{kind, provider, model}] x 8, ... }
+let warFilled = false;
+let keys = {};
+let liveModels = {}; // provider -> models it offers (asked of the provider by the page's server)
+let modelsSig = "";
+const modelsOf = (p) => (liveModels[p]?.length ? liveModels[p] : PROVIDERS[p]?.models ?? []);
+const nice = (c) => (c === "darkgreen" ? "dark green" : c);
+$("war-field").innerHTML = `<option value="random">Random battlefield</option>` + MAPS.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} (${esc(m.terrain)})</option>`).join("") + `<option value="none">None: Open RTS's plain map</option>`;
+$("war-map").innerHTML = WAR.maps.map((m) => `<option value="${esc(m.id)}">${esc(m.name)} (up to ${m.players} players)</option>`).join("");
+function fillCount() {
+  const max = WAR.maps.find((m) => m.id === war.map)?.players ?? 2;
+  war.count = Math.min(Math.max(2, war.count), max);
+  $("war-count").innerHTML = Array.from({ length: max - 1 }, (_, i) => i + 2).map((n) => `<option value="${n}"${n === war.count ? " selected" : ""}>${n} players</option>`).join("");
+}
+function keyHint(provider) {
+  if (provider === "ollama") return "No key needed: runs on this Mac";
+  const k = keys[provider];
+  return k?.saved ? `${PROVIDERS[provider].name} key saved (${k.hint}, from ${k.source}); shared by every ${PROVIDERS[provider].name} player` : `No ${PROVIDERS[provider]?.name ?? provider} key saved yet`;
+}
+function playerCard(i) {
+  const c = WAR.colors[i];
+  const p = war.players[i];
+  const provs = Object.entries(PROVIDERS).map(([k, v]) => `<option value="${k}"${k === p.provider ? " selected" : ""}>${esc(v.name)}</option>`).join("");
+  const model = p.kind !== "model" ? "" : `
+    <div class="row two">
+      <label>Provider <select data-i="${i}" data-f="provider">${provs}</select></label>
+      <label>Model <select data-i="${i}" data-f="model">${[...new Set([p.model, ...modelsOf(p.provider)])].filter(Boolean).map((m) => `<option value="${esc(m)}"${m === p.model ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
+    </div>
+    ${p.provider === "ollama" ? "" : `<label>API key <input data-i="${i}" data-f="key" type="password" autocomplete="off" spellcheck="false" placeholder="${keys[p.provider]?.saved ? "Paste to replace the saved key" : "Paste the key"}"></label>`}
+    <div class="key-hint">${esc(keyHint(p.provider))}</div>
+    <div class="buttons"><button data-i="${i}" data-act="test">Test key</button><span class="msg" id="war-msg-${i}"></span></div>`;
+  return `<div class="team war" style="--pc:${CHIP[c] ?? "#888"}">
+    <h3><span class="chip" style="background:${CHIP[c] ?? "#888"}"></span>${esc(nice(c))}</h3>
+    <label>Played by <select data-i="${i}" data-f="kind">
+      <option value="model"${p.kind === "model" ? " selected" : ""}>AI model</option>
+      <option value="ai"${p.kind === "ai" ? " selected" : ""}>Scripted computer player</option>
+      <option value="human"${p.kind === "human" ? " selected" : ""}>Human (you)</option>
+    </select></label>${model}
+  </div>`;
+}
+function drawPlayers() {
+  fillCount();
+  $("war-players").innerHTML = Array.from({ length: war.count }, (_, i) => playerCard(i)).join("");
+}
+$("war-players").addEventListener("change", (e) => {
+  const el = e.target;
+  const i = Number(el.dataset.i);
+  const f = el.dataset.f;
+  if (!f || f === "key" || Number.isNaN(i)) return;
+  if (f === "kind" && el.value === "human") war.players.forEach((p, j) => { if (j !== i && p.kind === "human") p.kind = "ai"; });
+  war.players[i][f] = el.value;
+  if (f === "provider") war.players[i].model = (PROVIDERS[el.value]?.models ?? modelsOf(el.value))[0] ?? modelsOf(el.value)[0] ?? "";
+  if (f === "kind" || f === "provider") drawPlayers();
+});
+$("war-players").addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.dataset.f === "model") war.players[Number(el.dataset.i)].model = el.value.trim();
+});
+$("war-players").addEventListener("click", async (e) => {
+  const el = e.target;
+  if (el.dataset.act !== "test") return;
+  const i = Number(el.dataset.i);
+  const p = war.players[i];
+  say("war-msg-" + i, "Testing…");
+  try {
+    await saveTypedKeys();
+    const r = await post("/api/key/test", { provider: p.provider, model: p.model });
+    if (r.ok) say("war-msg-" + i, `Works: "${r.reply}" in ${(r.ms / 1000).toFixed(1)} s`, "ok");
+    else say("war-msg-" + i, r.error, "err");
+    await refresh();
+  } catch (err) { say("war-msg-" + i, err.message, "err"); }
+});
+// Keys typed into any player card are saved for that card's provider.
+async function saveTypedKeys() {
+  for (const el of $("war-players").querySelectorAll('input[data-f="key"]')) {
+    const v = el.value.trim();
+    if (!v) continue;
+    await post("/api/key", { provider: war.players[Number(el.dataset.i)].provider, key: v });
+    el.value = "";
+  }
+}
+$("war-map").addEventListener("change", () => { war.map = $("war-map").value; drawPlayers(); });
+$("war-count").addEventListener("change", () => { war.count = Number($("war-count").value); drawPlayers(); });
+function warForm() {
+  return { map: war.map, battlefield: $("war-field").value, count: war.count, players: war.players, speed: $("war-speed").value, minutes: $("war-minutes").value, budget: $("war-budget").value, fog: $("war-fog").checked, screen: $("war-screen").value, mouse: $("war-mouse").value };
+}
+$("war-save").addEventListener("click", async () => {
+  try { await saveTypedKeys(); await post("/api/war/settings", warForm()); say("war-settings-msg", "Saved", "ok"); refresh(); } catch (e) { say("war-settings-msg", e.message, "err"); }
+});
+$("war-window").addEventListener("click", async () => {
+  try { const r = await post("/api/war/window"); say("war-play-msg", r.already ? "The Outpost War window is already open" : "Opening Outpost War…", "ok"); refresh(); } catch (e) { say("war-play-msg", e.message, "err"); }
+});
+$("war-start").addEventListener("click", async () => {
+  say("war-play-msg", "Starting…");
+  try { await saveTypedKeys(); await post("/api/war/start", warForm()); say("war-play-msg", "Battle sent to the game window", "ok"); refresh(); } catch (e) { say("war-play-msg", e.message, "err"); }
+});
+$("war-stop").addEventListener("click", async () => {
+  try { const r = await post("/api/war/stop"); say("war-play-msg", r.ok ? "Battle stopped" : "No battle is running"); refresh(); } catch (e) { say("war-play-msg", e.message, "err"); }
+});
+const clock = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+const who = (p) => (p.controller === "human" ? "you" : p.controller === "model" ? p.model : "scripted AI");
+const lineup = (c) => (c?.players ?? []).map((p) => `${nice(p.color)} (${who(p)})`).join(" vs ");
+function commanderTable(list) {
+  if (!list?.length) return "";
+  return `<div class="table"><table><thead><tr><th>Player</th><th>Model</th><th>Status</th><th>Turns</th><th>Tokens</th><th>Avg turn</th><th>Orders</th><th>Last orders</th></tr></thead><tbody>
+    ${list.map((m) => `<tr><td><span class="chip" style="background:${CHIP[m.color] ?? "#888"}"></span>${esc(nice(m.color))}</td><td>${esc(m.model)}</td><td>${esc(m.status)}${m.lastError ? `<div class="mini" style="color:var(--bad)">${esc(m.lastError.slice(0, 120))}</div>` : ""}</td><td>${m.turns}</td><td>${(m.tokens / 1000).toFixed(1)}k of ${Math.round(m.budget / 1000)}k</td><td>${m.avgTurnS ?? "–"} s</td><td>${m.orders}${m.refused ? ` (${m.refused} refused)` : ""}</td><td><ul class="lines">${(m.lastOrders ?? []).slice(0, 4).map((l) => `<li>${esc(l.slice(0, 110))}</li>`).join("")}</ul></td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+function renderWar(s) {
+  keys = s.keys ?? {};
+  const sig = JSON.stringify(s.models ?? {});
+  const modelsChanged = sig !== modelsSig;
+  modelsSig = sig;
+  liveModels = s.models ?? {};
+  // The Outpost Zero team cards suggest the same live lists.
+  for (const t of ["A", "B"]) {
+    const dl = $("models-" + t);
+    if (dl && modelsChanged) dl.innerHTML = modelsOf($("prov-" + t).value).map((m) => `<option value="${esc(m)}">`).join("");
+  }
+  if (!warFilled) {
+    const w = s.settings.war;
+    war = { map: w.map, count: w.count ?? 2, players: w.players.map((p) => ({ ...p })) };
+    $("war-map").value = w.map;
+    $("war-field").value = w.battlefield ?? "random";
+    $("war-speed").value = String(w.speed);
+    $("war-minutes").value = w.minutes;
+    $("war-budget").value = w.budget;
+    $("war-fog").checked = w.fog;
+    $("war-screen").value = w.screen;
+    $("war-mouse").value = w.mouse;
+    drawPlayers();
+    warFilled = true;
+  } else if (modelsChanged && ![...$("war-players").querySelectorAll('input[data-f="key"]')].some((el) => el.value)) {
+    drawPlayers(); // the provider's own model list arrived
+  } else {
+    // Refresh the key hints without redrawing the cards (that would drop what is being typed).
+    for (const el of $("war-players").querySelectorAll(".key-hint")) {
+      const i = Number(el.parentElement.querySelector("[data-i]")?.dataset.i);
+      if (!Number.isNaN(i)) el.textContent = keyHint(war.players[i].provider);
+    }
+  }
+  const b = s.war;
+  $("war-dots").innerHTML = [
+    `<span class="dot ${b ? "on" : "off"}">Battle service ${b ? "up" : "down (starts with the first click)"}</span>`,
+    b ? `<span class="dot ${b.game ? "on" : "off"}">Game window ${b.game ? "connected" : "not open"}</span>` : "",
+  ].join("");
+  let html = "";
+  if (b?.phase === "running" && b.config) {
+    html += `<div class="result">Battle running</div><div class="note">${esc(b.config.mapName)}${b.config.field ? ` · ${esc(b.config.field.name)}` : ""} · ${esc(lineup(b.config))} · ${b.config.speed}× · started ${clock((Date.now() - b.startedAt) / 1000)} ago${b.source === "mission-control" ? " · from a Mission Control task" : ""}</div>${commanderTable(b.commanders)}`;
+  } else if (b?.phase === "waiting_for_game" && b.config) {
+    html += `<div class="result">Waiting for the game window</div><div class="note">${esc(b.config.mapName)} · ${esc(lineup(b.config))}: starts as soon as Outpost War is open</div>`;
+  }
+  if (b?.last) {
+    const r = b.last.result;
+    const byColor = Object.fromEntries((b.last.config.players ?? []).map((p) => [p.color, p]));
+    html += `<div class="result" style="margin-top:12px">Last battle: ${r.winner ? `${esc(nice(r.winner))} won${byColor[r.winner] ? ` (${esc(who(byColor[r.winner]))})` : ""}` : "no winner"}</div>
+      <div class="note">${esc(b.last.config.mapName)}${b.last.config.field ? ` · ${esc(b.last.config.field.name)}` : ""} · ${esc(r.reason)}${r.gameTimeS ? ` · game time ${clock(r.gameTimeS)}` : ""}</div>`;
+    if (r.players?.length) html += `<div class="table"><table><thead><tr><th>Player</th><th>Played by</th><th>Units</th><th>Buildings</th><th>Status</th></tr></thead><tbody>
+      ${r.players.map((p) => `<tr><td><span class="chip" style="background:${CHIP[p.color] ?? "#888"}"></span>${esc(nice(p.color))}</td><td>${esc(byColor[p.color] ? who(byColor[p.color]) : p.controller)}</td><td>${p.units}</td><td>${p.structures}</td><td>${p.alive ? "standing" : "destroyed"}</td></tr>`).join("")}
+      </tbody></table></div>`;
+    html += commanderTable(b.last.commanders);
+  }
+  const logs = s.battleLogs ?? [];
+  if (logs.length) {
+    html += `<div class="note" style="margin-top:12px"><b>Prompt logs</b> (newest first; in the project's battle-logs folder):</div><ul class="lines" style="font-size:13px">` +
+      logs.slice(0, 5).map((l) => `<li>${esc(l.id)}: ${l.files.map((f) => `<a href="/battle-logs/${encodeURIComponent(l.id)}/${encodeURIComponent(f)}" target="_blank" rel="noopener">${esc(f)}</a>`).join(" · ")}</li>`).join("") + `</ul>`;
+  }
+  $("war-board").innerHTML = html;
+}
+
 function render(s) {
+  renderWar(s);
   if (!filled) {
     for (const t of ["A", "B"]) {
       $("prov-" + t).value = s.teams[t].provider;

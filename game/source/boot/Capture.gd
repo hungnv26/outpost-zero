@@ -15,6 +15,6 @@ func _ready():
 
 
 func _shot(t: float):
-	get_viewport().get_texture().get_image().save_png("%s/classic_%03d.png" % [dir, int(t)])
+	get_viewport().get_texture().get_image().save_png("%s/war_%03d.png" % [dir, int(t)])
 	if quit_after and t == times.max():
 		get_tree().quit()

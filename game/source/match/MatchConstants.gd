@@ -3,6 +3,13 @@ const ADVERSARY_PLAYER_CIRCLE_COLOR = Color.RED
 const RESOURCE_CIRCLE_COLOR = Color.YELLOW
 const DEFAULT_CIRCLE_COLOR = Color.WHITE
 const MAPS = {
+	# Outpost Zero: a two-player map, the bases facing each other across the middle (Outpost War).
+	"res://source/match/maps/Duel.tscn":
+	{
+		"name": "Duel",
+		"players": 2,
+		"size": Vector2i(80, 44),
+	},
 	"res://source/match/maps/PlainAndSimple.tscn":
 	{
 		"name": "Plain & Simple",

@@ -132,11 +132,6 @@ var _replay_report: Button
 var _timeline: Control
 var _deferred_result = null  # mission whose report waits for the replay to finish
 var replay_active = false
-var _settings_panel: PanelContainer
-var _chip_groups = {}  # key -> [{button, value}]
-var _zoom_slider: HSlider
-var _syncing_zoom = false
-var settings_ref = null
 var _build_panel = null
 var _hint_panel: PanelContainer
 var _hint_label: Label
@@ -176,7 +171,6 @@ func _ready():
 	_build_approval()
 	_build_result()
 	_build_replay()
-	_build_settings()
 	_build_build_panel()
 	_build_hint_and_toast()
 	_switch_tab("mission")
@@ -705,7 +699,8 @@ func _build_top_bar():
 	row.add_child(brand)
 	var tabs = HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 2)
-	for t in [["Mission", "mission"], ["Sectors", "departments"], ["Build", "build"], ["Settings", "settings"]]:
+	# Settings live in Mission Control (docs/settings.md), not in a tab.
+	for t in [["Mission", "mission"], ["Sectors", "departments"], ["Build", "build"]]:
 		var b = Button.new()
 		b.text = t[0]
 		b.focus_mode = FOCUS_NONE
@@ -902,16 +897,12 @@ func _update_clock():
 	_date_label.text = "%s %d, %d" % [MONTHS[t["month"] - 1], t["day"], t["year"]]
 
 
-# Tabs pick what the left column shows (Settings opens over the right column).
+# Tabs pick what the left column shows.
 func _switch_tab(key: String):
 	_tab = key
 	_left_mission.visible = key == "mission"
 	_left_departments.visible = key == "departments"
 	_build_panel.visible = key == "build"
-	_settings_panel.visible = key == "settings"
-	_roster_scroll.get_parent().get_parent().visible = key != "settings"  # Settings opens in its place
-	if key == "settings" and settings_ref != null and camera_ref != null:
-		show_settings(settings_ref, camera_ref.size)
 	for k in _tab_buttons:
 		var on = k == key
 		var b = _tab_buttons[k]
@@ -2148,152 +2139,6 @@ static func _fmt_ms(ms: float) -> String:
 
 
 # ---------- settings ----------
-
-
-func _build_settings():
-	const Settings = preload("res://source/agent/Settings.gd")
-	_settings_panel = _panel(BG_SOLID)
-	_settings_panel.set_anchors_and_offsets_preset(PRESET_TOP_RIGHT)
-	_settings_panel.offset_left = -640
-	_settings_panel.offset_right = -16
-	_settings_panel.offset_top = TOP_H + 12
-	_settings_panel.grow_horizontal = GROW_DIRECTION_BEGIN  # widen leftwards, never off-screen
-	_settings_panel.visible = false
-	add_child(_settings_panel)
-	var v = VBoxContainer.new()
-	v.add_theme_constant_override("separation", 12)
-	_settings_panel.add_child(v)
-	var head = HBoxContainer.new()
-	var title = _label("SETTINGS", 14, MUTED)
-	title.size_flags_horizontal = SIZE_EXPAND_FILL
-	head.add_child(title)
-	var close = _button("Close")
-	close.custom_minimum_size = Vector2(72, 30)
-	close.pressed.connect(func(): _switch_tab("mission"))
-	head.add_child(close)
-	v.add_child(head)
-	_chip_row(v, "Display", "fullscreen", [["Window", false], ["Fullscreen", true]])
-	var sizes = []
-	for sz in Settings.WINDOW_SIZES:
-		var chip_name = "%d×%d" % [sz.x, sz.y]
-		if sz.y == 2160:
-			chip_name += " 4K"
-		sizes.append([chip_name, sz])
-	_chip_row(v, "Window size", "window_size", sizes)
-	var scales = []
-	for r in Settings.RENDER_SCALES:
-		scales.append(["%d%%" % int(round(r * 100.0)), r])
-	_chip_row(v, "3D resolution", "render_scale", scales)
-	_chip_row(v, "Anti-aliasing", "msaa", [["Off", 0], ["2×", 1], ["4×", 2]])
-	var texts = []
-	for t in Settings.TEXT_SIZES:
-		texts.append(["%d%%" % int(round(t * 100.0)), t])
-	_chip_row(v, "Menu text", "text_size", texts)
-	var labels = []
-	for t in Settings.LABEL_SIZES:
-		labels.append(["%d%%" % int(round(t * 100.0)), t])
-	_chip_row(v, "Map labels", "label_size", labels)
-	var zoom_row = HBoxContainer.new()
-	zoom_row.add_theme_constant_override("separation", 10)
-	var zl = _label("Map zoom", 15)
-	zl.custom_minimum_size = Vector2(130, 0)
-	zoom_row.add_child(zl)
-	_zoom_slider = HSlider.new()
-	# Slider reads "closer" to the right: value = ZOOM_MAX + ZOOM_MIN - camera size.
-	_zoom_slider.min_value = Settings.ZOOM_MIN
-	_zoom_slider.max_value = Settings.ZOOM_MAX
-	_zoom_slider.step = 1.0
-	_zoom_slider.size_flags_horizontal = SIZE_EXPAND_FILL
-	_zoom_slider.custom_minimum_size = Vector2(220, 24)
-	_zoom_slider.value_changed.connect(
-		func(val):
-			if not _syncing_zoom:
-				setting_changed.emit("zoom", Settings.ZOOM_MAX + Settings.ZOOM_MIN - val)
-	)
-	zoom_row.add_child(_zoom_slider)
-	var fit = _button("Fit map")
-	fit.custom_minimum_size = Vector2(84, 30)
-	fit.pressed.connect(func(): setting_changed.emit("zoom", Settings.ZOOM_DEFAULT))
-	zoom_row.add_child(fit)
-	v.add_child(zoom_row)
-	v.add_child(_label("Lower 3D resolution runs faster on large screens; text stays sharp.", 12, MUTED))
-	v.add_child(HSeparator.new())
-	# Game mode (docs/open-rts-mode.md): Open RTS is the original deathmatch this game is built on.
-	# Switching restarts the game; the colony and the services keep running.
-	var mode_row = HBoxContainer.new()
-	mode_row.add_theme_constant_override("separation", 10)
-	var ml = _label("Game mode", 15)
-	ml.custom_minimum_size = Vector2(130, 0)
-	mode_row.add_child(ml)
-	var switch = _button("Switch to Open RTS")
-	switch.custom_minimum_size = Vector2(0, 30)
-	switch.pressed.connect(
-		func():
-			if switch.text == "Switch to Open RTS":
-				switch.text = "Confirm: restart as Open RTS"
-				get_tree().create_timer(5.0).timeout.connect(func(): switch.text = "Switch to Open RTS")
-			else:
-				preload("res://source/boot/GameMode.gd").switch_to(get_tree(), "open-rts")
-	)
-	mode_row.add_child(switch)
-	v.add_child(mode_row)
-	v.add_child(_label("Open RTS is the original real-time strategy game: build an army and destroy the other players. It needs no AI services.", 12, MUTED))
-
-
-func _chip_row(parent: Control, title: String, key: String, options: Array):
-	var row = HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	var l = _label(title, 15)
-	l.custom_minimum_size = Vector2(130, 0)
-	row.add_child(l)
-	_chip_groups[key] = []
-	for opt in options:
-		var b = _button(opt[0])
-		b.custom_minimum_size = Vector2(0, 30)
-		b.toggle_mode = true
-		var value = opt[1]
-		b.pressed.connect(func(): setting_changed.emit(key, value))
-		row.add_child(b)
-		_chip_groups[key].append({"button": b, "value": value})
-	parent.add_child(row)
-
-
-func _toggle_settings():
-	_switch_tab("mission" if _tab == "settings" else "settings")
-
-
-# Highlight the active option of each setting and sync the zoom slider.
-func show_settings(settings, camera_size: float):
-	const Settings = preload("res://source/agent/Settings.gd")
-	var current = {
-		"fullscreen": settings.fullscreen,
-		"window_size": settings.window_size,
-		"render_scale": settings.render_scale,
-		"msaa": settings.msaa,
-		"text_size": settings.text_size,
-		"label_size": settings.label_size,
-	}
-	for key in _chip_groups:
-		for chip in _chip_groups[key]:
-			var on = _same(chip["value"], current[key])
-			chip["button"].set_pressed_no_signal(on)
-			var sb = (chip["button"].get_theme_stylebox("normal") as StyleBoxFlat).duplicate()
-			sb.bg_color = Color(0.2, 0.45, 0.85) if on else Color(0.16, 0.2, 0.3)
-			chip["button"].add_theme_stylebox_override("normal", sb)
-			chip["button"].add_theme_stylebox_override("pressed", sb)
-		if key == "window_size":
-			for chip in _chip_groups[key]:
-				chip["button"].disabled = settings.fullscreen
-	_syncing_zoom = true
-	_zoom_slider.value = Settings.ZOOM_MAX + Settings.ZOOM_MIN - camera_size
-	_syncing_zoom = false
-
-
-static func _same(a, b) -> bool:
-	if typeof(a) == TYPE_FLOAT or typeof(b) == TYPE_FLOAT:
-		return absf(float(a) - float(b)) < 0.001
-	return a == b
-
 
 
 # ---------- build mode ----------

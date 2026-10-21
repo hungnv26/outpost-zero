@@ -44,29 +44,25 @@ layout_mode = 2
 theme_override_constants/separation = 10
 alignment = 1
 
-[node name="Button" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
+[node name="Title" type="Label" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
-text = "PLAY"
+theme_override_font_sizes/font_size = 34
+text = "OUTPOST WAR"
+horizontal_alignment = 1
 
-[node name="Button2" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
+[node name="Status" type="Label" parent="PanelContainer/MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(380, 0)
 layout_mode = 2
-text = "OPTIONS"
+theme_override_colors/font_color = Color(0.8, 0.8, 0.8, 1)
+theme_override_font_sizes/font_size = 18
+text = "Connecting to the battle service…"
+horizontal_alignment = 1
+autowrap_mode = 3
 
-[node name="Button3" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
+[node name="Hint" type="Label" parent="PanelContainer/MarginContainer/VBoxContainer"]
 layout_mode = 2
-text = "CREDITS"
-
-[node name="OutpostZeroButton" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
-layout_mode = 2
-tooltip_text = "Switch to Outpost Zero, the colony game with real AI agents (restarts the game)"
-text = "Outpost Zero"
-
-[node name="Button4" type="Button" parent="PanelContainer/MarginContainer/VBoxContainer"]
-layout_mode = 2
-text = "QUIT"
-
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button" to="." method="_on_play_button_pressed"]
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button2" to="." method="_on_options_button_pressed"]
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button3" to="." method="_on_credits_button_pressed"]
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/Button4" to="." method="_on_quit_button_pressed"]
-[connection signal="pressed" from="PanelContainer/MarginContainer/VBoxContainer/OutpostZeroButton" to="." method="_on_outpost_zero_button_pressed"]
+theme_override_colors/font_color = Color(0.6, 0.6, 0.6, 1)
+theme_override_font_sizes/font_size = 14
+text = "Battles are set up on the Arena Setup page
+(127.0.0.1:8790, the Outpost War tab)."
+horizontal_alignment = 1

@@ -64,6 +64,7 @@ func bake(map):
 
 
 func _rebake():
+	var started_us = Time.get_ticks_usec()
 	# parse geometry other than map itself
 	var full_geometry = NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(
@@ -76,6 +77,9 @@ func _rebake():
 	NavigationServer3D.bake_from_source_geometry_data_async(
 		_baking_mesh, full_geometry, _on_bake_finished
 	)
+	var ms = (Time.get_ticks_usec() - started_us) / 1000.0
+	if ms >= 50.0:
+		print("SLOW navigation rebuild (main thread part): %d ms" % ms)
 
 
 # TODO: remove whenever Godot fixes that on its side

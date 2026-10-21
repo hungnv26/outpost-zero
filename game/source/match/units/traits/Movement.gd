@@ -75,12 +75,17 @@ func stop():
 
 func _align_unit_position_to_navigation():
 	await get_tree().process_frame  # wait for navigation to be operational
-	_unit.global_transform.origin = (
-		NavigationServer3D.map_get_closest_point(
-			get_navigation_map(), get_parent().global_transform.origin
-		)
-		- Vector3(0, path_height_offset, 0)
-	)
+	# Outpost Zero fix: since Godot 4.4 navigation maps are built in the background, so at the start
+	# of a match the map can still be empty and the closest point comes back as (0, 0, 0). Every
+	# starting unit was then teleported to the map's corner: the side spawned far from it lost its
+	# workers to the other side's deposits. Wait for the map, and only ever correct the height.
+	for _i in range(120):
+		var origin = get_parent().global_transform.origin
+		var closest = NavigationServer3D.map_get_closest_point(get_navigation_map(), origin)
+		if (closest * Vector3(1, 0, 1)).distance_to(origin * Vector3(1, 0, 1)) <= 1.0:
+			_unit.global_transform.origin = closest - Vector3(0, path_height_offset, 0)
+			return
+		await get_tree().physics_frame
 
 
 func _is_moving_actively():

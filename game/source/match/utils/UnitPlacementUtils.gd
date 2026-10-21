@@ -2,6 +2,8 @@ enum { VALID, COLLIDES_WITH_AGENT, NOT_NAVIGABLE }
 
 const MAX_SEARCH_DISTANCE_M = 150.0
 
+static var _verdicts = {}  # debug: why positions were refused during the current search
+
 
 static func find_valid_position_radially(
 	starting_position: Vector3, radius: float, navigation_map_rid: RID, scene_tree
@@ -21,6 +23,8 @@ static func find_valid_position_radially_yet_skip_starting_radius(
 	navigation_map_rid: RID,
 	scene_tree
 ):
+	var started_us = Time.get_ticks_usec()
+	_verdicts = {}
 	var starting_position_yless = starting_position * Vector3(1, 0, 1)
 	var units = (
 		scene_tree.get_nodes_in_group("units") + scene_tree.get_nodes_in_group("resource_units")
@@ -43,6 +47,7 @@ static func find_valid_position_radially_yet_skip_starting_radius(
 		# Safety net: never search past any map's size (an empty navigation map once made this
 		# loop run for minutes); fall back to the starting point.
 		if ring_distance_from_starting_position > MAX_SEARCH_DISTANCE_M:
+			_report_slow_search(started_us, ring_number, starting_position_yless, false)
 			return starting_position_yless
 		var rotation_angle_rad = asin((radius + spacing) / ring_distance_from_starting_position)
 		var radial_positions = []
@@ -61,12 +66,22 @@ static func find_valid_position_radially_yet_skip_starting_radius(
 		if shuffle:
 			radial_positions.shuffle()
 		for radial_position in radial_positions:
-			if _is_agent_placement_position_valid(
+			var verdict = validate_agent_placement_position(
 				radial_position, radius, units, navigation_map_rid
-			):
+			)
+			_verdicts[verdict] = _verdicts.get(verdict, 0) + 1
+			if verdict == VALID:
+				_report_slow_search(started_us, ring_number, starting_position_yless, true)
 				return radial_position
 	assert(false, "unexpected flow")
 	return Vector3.INF
+
+
+# Outpost Zero: a placement search that takes long enough to stall a frame is logged (docs/rts-arena.md).
+static func _report_slow_search(started_us: int, rings: int, at: Vector3, found: bool):
+	var ms = (Time.get_ticks_usec() - started_us) / 1000.0
+	if ms >= 50.0:
+		print("SLOW placement search: %d ms, %d rings from (%.0f, %.0f), %s; collided %d, off the navmesh %d" % [ms, rings, at.x, at.z, "found" if found else "gave up", _verdicts.get(COLLIDES_WITH_AGENT, 0), _verdicts.get(NOT_NAVIGABLE, 0)])
 
 
 static func validate_agent_placement_position(position, radius, existing_units, navigation_map_rid):

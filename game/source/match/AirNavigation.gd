@@ -13,7 +13,11 @@ func _ready():
 	NavigationServer3D.map_set_cell_height(
 		navigation_map_rid, Constants.Match.Air.Navmesh.CELL_HEIGHT
 	)
-	NavigationServer3D.region_set_map(_navigation_region.get_region_rid(), navigation_map_rid)
+	# Through the node, so the node itself knows its map (see bake()).
+	_navigation_region.set_navigation_map(navigation_map_rid)
+	# Godot 4.5+ builds region data on a background thread by default; on this separately created
+	# map that build never lands, so the air map stayed empty. Build it in place instead.
+	NavigationServer3D.region_set_use_async_iterations(_navigation_region.get_region_rid(), false)
 	NavigationServer3D.map_force_update(navigation_map_rid)
 	NavigationServer3D.map_set_active(navigation_map_rid, true)
 	_reference_static_collider_shape.global_transform.origin.y = Constants.Match.Air.Y
@@ -30,6 +34,9 @@ func bake(map):
 	_reference_static_collider_shape.global_transform.origin.x = map.size.x / 2.0
 	_reference_static_collider_shape.global_transform.origin.z = map.size.y / 2.0
 	_navigation_region.bake_navigation_mesh(false)
+	# Outpost Zero: with the air map empty, every helicopter or drone searched up to 150 m for a free
+	# spot and froze the game for seconds (see _ready). Make sure the region has the baked mesh.
+	_navigation_region.navigation_mesh = _navigation_region.navigation_mesh
 
 
 func _safety_checks():

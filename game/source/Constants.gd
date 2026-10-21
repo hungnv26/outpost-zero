@@ -4,6 +4,7 @@ enum PlayerType {
 	NONE = 0,
 	HUMAN = 1,
 	SIMPLE_CLAIRVOYANT_AI = 2,
+	MODEL = 3,  # Outpost Zero: commanded by an AI model through the battle service
 }
 
 
@@ -15,6 +16,7 @@ class Match:
 			PlayerType.HUMAN: preload("res://source/match/players/human/Human.tscn"),
 			PlayerType.SIMPLE_CLAIRVOYANT_AI:
 			preload("res://source/match/players/simple-clairvoyant-ai/SimpleClairvoyantAI.tscn"),
+			PlayerType.MODEL: preload("res://source/match/players/model/ModelPlayer.tscn"),
 		}
 
 

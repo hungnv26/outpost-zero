@@ -1,6 +1,9 @@
 #!/usr/bin/env node
-// Arena Setup (docs/arena.md §8f): a local page to give each team a model and an API key, bring
-// the teams up, start a match (optionally recorded), open the game windows and follow the score.
+// Arena Setup (docs/arena.md §8f): the local setup page for both games.
+//   Outpost Zero: give each team a model and an API key, bring the teams up, start a match
+//   (optionally recorded), open the game windows and follow the score.
+//   Outpost War (docs/outpost-war.md): map, players, speed, time limit and display; it opens the
+//   game window and starts or stops the battle through the battle service (127.0.0.1:8796).
 //   node tools/arena_setup.mjs            then open http://127.0.0.1:8790
 // Two servers in one process:
 //   - the page and its API on 127.0.0.1:8790 (this Mac only; every change needs the page's token
@@ -15,6 +18,7 @@ import { chmodSync, createReadStream, existsSync, mkdirSync, openSync, readdirSy
 import http from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { COLORS, MAPS, parseCard } from "../adapter/src/battle/card.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const UI_PORT = Number(process.env.SETUP_PORT ?? 8790);
@@ -30,6 +34,7 @@ const PROVIDERS = {
   openrouter: { name: "OpenRouter", base: "https://openrouter.ai/api/v1", models: ["anthropic/claude-sonnet-5-5", "openai/gpt-5"] },
 };
 const DEFAULTS = { A: "anthropic:claude-sonnet-5-5", B: "openai:gpt-5" };
+const OLLAMA_BASE = process.env.OLLAMA_BASE ?? "http://127.0.0.1:11434/v1";
 const SETTINGS_PATH = join(ROOT, ".data", "arena-setup.json");
 
 // ---- files ----
@@ -52,18 +57,177 @@ function teamSpec(t) {
 function teamKey(t, provider) {
   return read(join(teamDir(t), "api.key")) || providersEnv()[`${provider.toUpperCase()}_API_KEY`] || "";
 }
+// One key per provider for Outpost War's model players (infra/keys/<provider>.key, 600,
+// gitignored). A team key on the same provider, or infra/providers.env, also serves.
+const keyDir = join(ROOT, "infra", "keys");
+function providerKeyInfo(provider) {
+  const own = read(join(keyDir, `${provider}.key`));
+  if (own) return { key: own, source: "this page" };
+  for (const t of TEAMS) {
+    const k = read(join(teamDir(t), "api.key"));
+    if (k && teamSpec(t).provider === provider) return { key: k, source: `team ${t}'s key` };
+  }
+  const env = providersEnv()[`${provider.toUpperCase()}_API_KEY`];
+  return env ? { key: env, source: "infra/providers.env" } : { key: "", source: "" };
+}
+function keyStatus() {
+  return Object.fromEntries(
+    Object.keys(PROVIDERS)
+      .filter((p) => p !== "ollama")
+      .map((p) => {
+        const k = providerKeyInfo(p);
+        return [p, k.key ? { saved: true, hint: `…${k.key.slice(-4)}`, source: k.source } : { saved: false }];
+      }),
+  );
+}
+async function callModel(provider, model, body) {
+  const base = provider === "ollama" ? OLLAMA_BASE : PROVIDERS[provider]?.base;
+  if (!base) throw new Error(`unknown provider ${provider}`);
+  const key = provider === "ollama" ? "ollama" : providerKeyInfo(provider).key;
+  if (!key) throw new Error(`no ${PROVIDERS[provider].name} key saved`);
+  return fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}`, ...(provider === "openrouter" ? { "x-title": "Outpost War" } : {}) },
+    body: JSON.stringify(adaptBody(provider, model, body)),
+    signal: AbortSignal.timeout(180_000),
+  });
+}
+const warUsage = {};
+
+// ---- the models each provider offers, asked of the provider with the saved key ----
+// (refreshed every 15 minutes and when a key is saved; the PROVIDERS lists are the fallback)
+const modelLists = {};
+async function fetchModels(provider) {
+  try {
+    if (provider === "anthropic") {
+      const key = providerKeyInfo("anthropic").key;
+      if (!key) return;
+      const r = await fetch("https://api.anthropic.com/v1/models?limit=100", { headers: { "x-api-key": key, "anthropic-version": "2023-06-01" }, signal: AbortSignal.timeout(10_000) });
+      if (r.ok) modelLists.anthropic = (await r.json()).data.map((m) => m.id);
+    } else if (provider === "openai") {
+      const key = providerKeyInfo("openai").key;
+      if (!key) return;
+      const r = await fetch("https://api.openai.com/v1/models", { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) });
+      if (!r.ok) return;
+      // Chat models that take tools through chat completions: no snapshots, no audio, image,
+      // realtime or search variants, no -pro (those answer only on the Responses API).
+      const ids = (await r.json()).data.map((m) => m.id).filter((id) => /^(gpt-4\.1|gpt-4o|gpt-[5-9]|o[3-9])/.test(id) && !/audio|realtime|transcribe|tts|image|search|embedding|codex|preview|-pro\b|\d{4}-\d\d-\d\d/.test(id));
+      modelLists.openai = ids.filter((id) => !RESPONSES_ONLY.has(id)).sort((a, b) => (a.startsWith("o") - b.startsWith("o")) || b.localeCompare(a, undefined, { numeric: true }));
+    } else if (provider === "openrouter") {
+      const r = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(15_000) });
+      if (r.ok) modelLists.openrouter = (await r.json()).data.filter((m) => (m.supported_parameters ?? []).includes("tools")).map((m) => m.id).sort();
+    } else if (provider === "ollama") {
+      const r = await fetch(OLLAMA_BASE.replace(/\/v1$/, "") + "/api/tags", { signal: AbortSignal.timeout(5_000) });
+      if (r.ok) modelLists.ollama = (await r.json()).models.map((m) => m.name.replace(/:latest$/, "")).filter((n) => !/embed|bge|nomic/.test(n));
+    }
+  } catch {}
+}
+const refreshModels = () => Promise.all(Object.keys(PROVIDERS).map(fetchModels));
+setTimeout(refreshModels, 500);
+setInterval(refreshModels, 15 * 60_000);
+
 function gatewayToken(t) {
   const p = join(teamDir(t), "gateway.token");
   if (!read(p)) writeSecret(p, randomBytes(16).toString("hex"));
   return read(p);
 }
+// One entry per colour, so changing the number of players keeps each colour's choice.
+const WAR_PLAYER_DEFAULTS = [
+  { kind: "model", provider: "anthropic", model: "claude-sonnet-5-5" },
+  { kind: "model", provider: "openai", model: "gpt-5" },
+  { kind: "model", provider: "anthropic", model: "claude-haiku-5-5" },
+  { kind: "model", provider: "openai", model: "gpt-5-mini" },
+  { kind: "ai", provider: "ollama", model: "agentrts-qwen3" },
+  { kind: "ai", provider: "ollama", model: "agentrts-qwen3" },
+  { kind: "ai", provider: "ollama", model: "agentrts-qwen3" },
+  { kind: "ai", provider: "ollama", model: "agentrts-qwen3" },
+];
+const WAR_DEFAULTS = { map: "Duel", battlefield: "random", count: 2, players: WAR_PLAYER_DEFAULTS, speed: 0.5, minutes: 20, budget: 400000, fog: true, screen: "window", mouse: "free" };
 function loadSettings() {
   const d = { objective: "lifeline", sols: 12, map: "random", clock: 2, budget: 400000, record: false };
   try {
-    return { ...d, ...JSON.parse(readFileSync(SETTINGS_PATH, "utf8")) };
+    const saved = JSON.parse(readFileSync(SETTINGS_PATH, "utf8"));
+    const war = { ...WAR_DEFAULTS, ...(saved.war ?? {}) };
+    if (!Array.isArray(war.players)) war.players = WAR_PLAYER_DEFAULTS; // the earlier colour -> human/ai form
+    return { ...d, ...saved, war };
   } catch {
-    return d;
+    return { ...d, war: WAR_DEFAULTS };
   }
+}
+function saveSettings(next) {
+  mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
+  writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
+}
+
+// ---- Outpost War ----
+
+const BATTLE_URL = "http://127.0.0.1:8796";
+// The page's form as a battle card (adapter/src/battle/card.ts), so the battle service checks it
+// with the same rules as any card.
+function warCard(w) {
+  const players = COLORS.slice(0, w.count).map((c, i) => {
+    const p = w.players[i];
+    return `    - ${c}: ${p.kind === "model" ? `${p.provider}:${p.model}` : p.kind}`;
+  });
+  return ["battle:", `  map: ${w.map}`, `  battlefield: ${w.battlefield ?? "random"}`, "  players:", ...players, `  speed: ${w.speed}`, `  minutes: ${w.minutes}`, `  budget: ${w.budget}`, `  fog: ${w.fog ? "on" : "off"}`, `  screen: ${w.screen}`, `  mouse: ${w.mouse}`].join("\n");
+}
+function warFrom(b, prev) {
+  const map = MAPS[b.map] ? b.map : prev.map;
+  const num = (v, lo, hi, d) => (v !== undefined && v !== "" && v !== null && Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Number(v))) : d);
+  const players = COLORS.map((_, i) => {
+    const p = Array.isArray(b.players) ? b.players[i] : null;
+    const old = prev.players[i] ?? WAR_PLAYER_DEFAULTS[i];
+    if (!p) return old;
+    const kind = ["model", "ai", "human"].includes(p.kind) ? p.kind : old.kind;
+    const provider = PROVIDERS[p.provider] ? p.provider : old.provider;
+    const model = /^[\w./:-]{1,80}$/.test(String(p.model ?? "").trim()) ? String(p.model).trim() : old.model;
+    return { kind, provider, model };
+  });
+  const battlefield = b.battlefield === "random" || b.battlefield === "none" || battlefields().some((f) => f.id === b.battlefield) ? b.battlefield : prev.battlefield ?? "random";
+  return {
+    map,
+    battlefield,
+    count: Math.floor(num(b.count, 2, MAPS[map].players, Math.min(prev.count ?? 2, MAPS[map].players))),
+    players,
+    speed: num(b.speed, 0.25, 4, prev.speed),
+    minutes: Math.floor(num(b.minutes, 0, 240, prev.minutes)),
+    budget: Math.floor(num(b.budget, 10000, 20_000_000, prev.budget)),
+    fog: b.fog === undefined ? prev.fog : !!b.fog,
+    screen: b.screen === "fullscreen" ? "fullscreen" : "window",
+    mouse: b.mouse === "restricted" ? "restricted" : "free",
+  };
+}
+// Every model player needs its provider's key before the battle starts.
+function missingKeys(w) {
+  const out = [];
+  for (const [i, p] of w.players.slice(0, w.count).entries()) {
+    if (p.kind === "model" && p.provider !== "ollama" && !providerKeyInfo(p.provider).key) out.push(`${COLORS[i]} plays on ${PROVIDERS[p.provider].name}: paste a key for it`);
+  }
+  return out;
+}
+async function battleService() {
+  if (await getJson(`${BATTLE_URL}/health`)) return true;
+  mkdirSync(join(ROOT, ".data", "logs"), { recursive: true });
+  const out = openSync(join(ROOT, ".data", "logs", "battle.log"), "a");
+  const child = spawn("node", ["src/battle-main.ts"], { cwd: join(ROOT, "adapter"), stdio: ["ignore", out, out], detached: true });
+  child.unref();
+  writeFileSync(join(ROOT, ".data", "battle.pid"), String(child.pid));
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    if (await getJson(`${BATTLE_URL}/health`)) return true;
+  }
+  throw new Error("the battle service did not start (see .data/logs/battle.log)");
+}
+async function battlePost(path, body) {
+  const r = await fetch(BATTLE_URL + path, { method: "POST", headers: { "content-type": "application/json", "x-arena-token": ARENA_TOKEN }, body: JSON.stringify(body ?? {}), signal: AbortSignal.timeout(5000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error ?? `battle service: HTTP ${r.status}`);
+  return j;
+}
+function openWarWindow() {
+  killPidFile(join(ROOT, ".data", "game-war.pid"));
+  const pid = spawnDetached("godot", ["--path", "game", "--", "--mode=outpost-war"], "game-war.log");
+  writeFileSync(join(ROOT, ".data", "game-war.pid"), String(pid));
 }
 function battlefields() {
   try {
@@ -78,13 +242,21 @@ function battlefields() {
 // Newer OpenAI reasoning models take max_completion_tokens and no sampling settings, and the
 // current Claude models refuse a temperature; Hermes always sends max_tokens and a temperature,
 // so the gateway translates.
+// OpenAI's reasoning models (GPT-5 and later, the o-series) take max_completion_tokens and no
+// sampling settings.
+const OPENAI_REASONING = /^(gpt-[5-9]|o\d)/i;
+const NO_REASONING = new Set(); // OpenAI models that refused tools with any reasoning on chat completions
+// OpenAI models that take tools only on the Responses API (reasoning cannot be off on chat
+// completions): learnt from their refusals, seeded with the ones seen 2026-10-21; not offered.
+const RESPONSES_ONLY = new Set(["gpt-6-astra", "gpt-6.1-sol"]);
+
 function adaptBody(provider, model, body) {
   const b = { ...body, model };
   if (provider === "anthropic") {
     delete b.temperature;
     delete b.top_p;
   }
-  if (provider === "openai" && /^(gpt-5|o\d)/i.test(model)) {
+  if (provider === "openai" && OPENAI_REASONING.test(model)) {
     if (b.max_tokens !== undefined) {
       b.max_completion_tokens = Math.max(b.max_tokens, 2048);
       delete b.max_tokens;
@@ -134,6 +306,7 @@ const gateway = http.createServer(async (req, res) => {
     res.writeHead(code, { "content-type": "application/json" });
     res.end(JSON.stringify(obj));
   };
+  if (req.url === "/llm/war/v1/chat/completions") return warGateway(req, res, send);
   if (!m) return send(404, { error: { message: "not found" } });
   const t = m[1];
   const auth = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
@@ -182,6 +355,62 @@ const gateway = http.createServer(async (req, res) => {
     send(502, { error: { message: u.lastError } });
   }
 });
+
+// Outpost War's model players (the battle service's commanders, adapter/src/battle/commander.ts):
+// the referee's token, and the model as "provider:model" in the body.
+async function warGateway(req, res, send) {
+  if (req.method !== "POST") return send(405, { error: { message: "POST only" } });
+  if (!ARENA_TOKEN || !sameToken(req.headers["x-arena-token"] ?? "", ARENA_TOKEN)) return send(401, { error: { message: "bad token" } });
+  let body;
+  try {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    body = JSON.parse(raw || "{}");
+  } catch {
+    return send(400, { error: { message: "bad JSON" } });
+  }
+  const spec = String(body.model ?? "");
+  const provider = spec.slice(0, spec.indexOf(":"));
+  const model = spec.slice(spec.indexOf(":") + 1);
+  if (!PROVIDERS[provider] || !model) return send(400, { error: { message: `model must be provider:model, got "${spec}"` } });
+  const u = (warUsage[spec] ??= { requests: 0, errors: 0, tokens: 0, lastError: null });
+  u.requests++;
+  // A battle runs in real time: GPT-5 and the o-series think briefly.
+  const b = { ...body, model };
+  if (provider === "openai" && OPENAI_REASONING.test(model) && !/chat-latest/.test(model) && b.reasoning_effort === undefined) b.reasoning_effort = NO_REASONING.has(model) ? "none" : "low";
+  try {
+    let up = await callModel(provider, model, b);
+    let text = await up.text();
+    // OpenAI's newer models (GPT-5.4 and later) take tools on chat completions only with reasoning
+    // off: switch to "none" once and remember it for that model.
+    if (!up.ok && up.status === 400 && b.reasoning_effort === "low" && /reasoning_effort to 'none'/.test(text)) {
+      NO_REASONING.add(model);
+      b.reasoning_effort = "none";
+      up = await callModel(provider, model, b);
+      text = await up.text();
+      if (!up.ok && /does not support 'none'/.test(text)) {
+        RESPONSES_ONLY.add(model);
+        modelLists.openai = (modelLists.openai ?? []).filter((m) => m !== model);
+      }
+    }
+    if (!up.ok) {
+      u.errors++;
+      u.lastError = `${up.status}: ${text.slice(0, 300)}`;
+      res.writeHead(up.status, { "content-type": "application/json" });
+      return res.end(text);
+    }
+    try {
+      const j = JSON.parse(text);
+      u.tokens += (j.usage?.prompt_tokens ?? 0) + (j.usage?.completion_tokens ?? 0);
+    } catch {}
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(text);
+  } catch (e) {
+    u.errors++;
+    u.lastError = String(e instanceof Error ? e.message : e).slice(0, 300);
+    send(502, { error: { message: u.lastError } });
+  }
+}
 
 // ---- jobs (apply, start) ----
 
@@ -248,6 +477,16 @@ async function status() {
       usage: usage[t],
     };
   }
+  const war = await getJson(`${BATTLE_URL}/battle`);
+  const logRoot = join(ROOT, "battle-logs");
+  const battleLogs = existsSync(logRoot)
+    ? readdirSync(logRoot)
+        .filter((d) => /^[\w-]+$/.test(d))
+        .sort()
+        .slice(-8)
+        .reverse()
+        .map((id) => ({ id, files: readdirSync(join(logRoot, id)).filter((f) => /\.(md|jsonl|json)$/.test(f)).sort() }))
+    : [];
   const recs = existsSync(join(ROOT, "recordings")) ? readdirSync(join(ROOT, "recordings")).filter((f) => f.endsWith(".mp4")).sort() : [];
   return {
     teams,
@@ -256,6 +495,11 @@ async function status() {
     director: tail(join(ROOT, ".data", "logs", "director.log"), 6),
     applyLog: tail(join(ROOT, ".data", "logs", "arena-setup-apply.log"), 14),
     recordings: recs.slice(-5).reverse(),
+    war,
+    battleLogs,
+    models: Object.fromEntries(Object.keys(PROVIDERS).map((p) => [p, modelLists[p]?.length ? modelLists[p] : PROVIDERS[p].models])),
+    keys: keyStatus(),
+    warUsage,
   };
 }
 
@@ -314,6 +558,7 @@ async function api(req, res, path) {
     if (path === "/api/settings") {
       const s = loadSettings();
       const next = {
+        ...s,
         objective: ["lifeline", "sprint", "foothold", "awakening", "ending"].includes(b.objective) ? b.objective : s.objective,
         sols: Math.max(1, Math.min(200, Math.floor(Number(b.sols) || s.sols))),
         map: b.map === "random" || b.map === "duel" || battlefields().some((f) => f.id === b.map) ? b.map : s.map,
@@ -321,9 +566,62 @@ async function api(req, res, path) {
         budget: Math.max(10000, Math.min(20_000_000, Math.floor(Number(b.budget) || s.budget))),
         record: !!b.record,
       };
-      mkdirSync(dirname(SETTINGS_PATH), { recursive: true });
-      writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
+      saveSettings(next);
       return send(200, { ok: true, settings: next });
+    }
+    if (path === "/api/war/settings" || path === "/api/war/start") {
+      const s = loadSettings();
+      const war = warFrom(b, s.war);
+      saveSettings({ ...s, war });
+      if (path === "/api/war/settings") return send(200, { ok: true, war });
+      const card = warCard(war);
+      const check = parseCard(card);
+      if (!check.ok) return send(400, { error: check.errors.join("; ") });
+      const missing = missingKeys(war);
+      if (missing.length) return send(400, { error: missing.join("; ") });
+      await battleService();
+      const r = await battlePost("/battle/start", { card });
+      return send(200, { ok: true, id: r.id, phase: r.phase });
+    }
+    if (path === "/api/key") {
+      const provider = String(b.provider);
+      if (!PROVIDERS[provider] || provider === "ollama") return send(400, { error: "choose a provider that needs a key" });
+      if (b.clear) {
+        try {
+          unlinkSync(join(keyDir, `${provider}.key`));
+        } catch {}
+        return send(200, { ok: true });
+      }
+      const key = String(b.key ?? "").trim();
+      if (!key || /\s/.test(key) || key.length > 400) return send(400, { error: "that does not look like an API key" });
+      writeSecret(join(keyDir, `${provider}.key`), key);
+      void fetchModels(provider);
+      return send(200, { ok: true });
+    }
+    if (path === "/api/key/test") {
+      const provider = String(b.provider);
+      const model = String(b.model ?? "").trim();
+      if (!PROVIDERS[provider] || !/^[\w./:-]{1,80}$/.test(model)) return send(400, { error: "choose a provider and a model" });
+      const started = Date.now();
+      const r = await callModel(provider, model, { messages: [{ role: "user", content: "Reply with the single word OK." }], max_tokens: provider === "openai" ? 2048 : 20 });
+      const text = await r.text();
+      if (!r.ok) return send(200, { ok: false, error: `${r.status}: ${text.slice(0, 300)}` });
+      let reply = "";
+      try {
+        reply = JSON.parse(text).choices?.[0]?.message?.content ?? "";
+      } catch {}
+      return send(200, { ok: true, ms: Date.now() - started, reply: String(reply).slice(0, 60) });
+    }
+    if (path === "/api/war/stop") {
+      if (!(await getJson(`${BATTLE_URL}/health`))) return send(200, { ok: false });
+      return send(200, await battlePost("/battle/stop"));
+    }
+    if (path === "/api/war/window") {
+      await battleService();
+      const h = await getJson(`${BATTLE_URL}/health`);
+      if (h?.game) return send(200, { ok: true, already: true });
+      openWarWindow();
+      return send(200, { ok: true });
     }
     if (path === "/api/apply") {
       const specs = TEAMS.map((t) => {
@@ -391,11 +689,23 @@ const ui = http.createServer(async (req, res) => {
   const path = (req.url ?? "/").split("?")[0];
   if (path.startsWith("/api/")) return api(req, res, path);
   if (path.startsWith("/recordings/")) return serveRecording(req, res, decodeURIComponent(path.slice(12)));
+  if (path.startsWith("/battle-logs/")) {
+    // A battle's prompt log (adapter/src/battle-main.ts writes them), shown as plain text.
+    const m = /^\/battle-logs\/([\w-]+)\/([\w-]+\.(md|jsonl|json))$/.exec(decodeURIComponent(path));
+    const file = m ? join(ROOT, "battle-logs", m[1], m[2]) : "";
+    if (!m || !existsSync(file)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "content-type": `${m[3] === "md" ? "text/markdown" : m[3] === "json" ? "application/json" : "text/plain"}; charset=utf-8`, "cache-control": "no-store", "x-content-type-options": "nosniff" });
+    return createReadStream(file).pipe(res);
+  }
   if (path === "/" || path === "/index.html") {
     const page = readFileSync(join(ROOT, "tools", "arena_setup.html"), "utf8")
       .replace("__TOKEN__", PAGE_TOKEN)
       .replace("__PROVIDERS__", JSON.stringify(Object.fromEntries(Object.entries(PROVIDERS).map(([k, v]) => [k, { name: v.name, models: v.models }]))))
-      .replace("__MAPS__", JSON.stringify(battlefields()));
+      .replace("__MAPS__", JSON.stringify(battlefields()))
+      .replace("__WAR__", JSON.stringify({ maps: Object.entries(MAPS).map(([id, m]) => ({ id, name: m.name, players: m.players })), colors: COLORS }));
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-frame-options": "DENY", "content-security-policy": "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; media-src 'self'; frame-ancestors 'none'" });
     return res.end(page);
   }

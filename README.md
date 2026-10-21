@@ -14,7 +14,7 @@ Outpost Zero started on 2026-10-14 from the [Agent RTS](https://github.com/hungn
 foundation: a Godot 4 scene (fork of Open RTS) in which every character is a
 [Hermes Synapse](https://github.com/pauloberezini/hermes-synapse) agent, mirrored into
 [Mission Control](https://github.com/builderz-labs/mission-control). It runs beside Agent RTS
-without conflict: Hermes on 8101, Mission Control on 3001, the adapter on 8771.
+without conflict: Hermes on 8101, Mission Control on 3001 (no sign-in screen on this Mac; [docs/settings.md](docs/settings.md)), the adapter on 8771.
 
 ## Two ways to play
 
@@ -37,10 +37,15 @@ budget. [docs/arena.md](docs/arena.md).
 
 ## Two modes
 
-Outpost Zero is built on [Open RTS](https://github.com/lampe-games/godot-open-rts), a Godot 4
-deathmatch with no story, and the original game is still playable: **Settings, Game mode, Switch
-to Open RTS** in the colony, or `scripts/start.sh --classic` (no AI services needed). Its main
-menu has an **Outpost Zero** button to come back. [docs/open-rts-mode.md](docs/open-rts-mode.md).
+**Outpost War** is the real-time strategy battle that comes with Outpost Zero: build an army and
+destroy the other players. It is [Open RTS](https://github.com/lampe-games/godot-open-rts) by
+Lampe Games, the Godot 4 game this project is built on. Battles are set up on the Arena Setup
+page, the same one that runs Outpost Zero's races: run `scripts/start.sh --war` and open
+http://127.0.0.1:8790/#war, choose the map and the number of players, and for each one an AI model
+(Claude, GPT, OpenRouter or the local model), the scripted computer player or you, then *Start
+battle*; the result comes back to the page ([docs/rts-arena.md](docs/rts-arena.md)). Neither game has a settings screen
+([docs/settings.md](docs/settings.md)).
+[docs/outpost-war.md](docs/outpost-war.md).
 
 ## How it works
 
@@ -155,4 +160,4 @@ The world contract (events and commands) is in `adapter/src/contract.ts` and
 Outpost Zero's code is MIT (Hung Ngo). The game is a fork of Open RTS (MIT, Pawel Lampe) with
 Kenney's Space Kit, KayKit Space Base Bits and the Quaternius Ultimate Space Kit (all CC0),
 terrain textures from Poly Haven scans (CC0), and the logos listed in `game/LOGO_LICENSES.md`.
-Hermes Synapse and Mission Control are MIT and stay unmodified in `vendor/`.
+Hermes Synapse and Mission Control are MIT and stay unmodified in `vendor/` (the no-sign-in front is our own `tools/mc_open.mjs`).

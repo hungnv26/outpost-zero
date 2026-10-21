@@ -1,3 +1,4 @@
+import type { GameSettings } from "./settings-card.ts";
 import { EventEmitter } from "node:events";
 import { type BaseLayout, cloneLayout, DEFAULT_LAYOUT, homeOf } from "./layout.ts";
 import {
@@ -68,6 +69,9 @@ export class World extends EventEmitter {
   private recordings = new Map<string, Replay>();
   history: MissionRecord[] = [];
   arena: ArenaInfo | null = null;
+  // Game settings from the Mission Control settings card (docs/settings.md); the game has no
+  // Settings panel of its own.
+  settings: GameSettings | null = null;
   source: string;
   missionControlUrl: string | null = null;
   readonly now: () => number;
@@ -133,6 +137,7 @@ export class World extends EventEmitter {
       layout: this.layout,
       history: this.history,
       arena: this.arena,
+      settings: this.settings,
     };
   }
 
@@ -277,6 +282,12 @@ export class World extends EventEmitter {
     this.approvals.set(a.id, next);
     this.emitEvent({ type: "approval.upsert", approval: next });
     return next;
+  }
+
+  setSettings(settings: GameSettings | null): void {
+    if (JSON.stringify(settings) === JSON.stringify(this.settings)) return;
+    this.settings = settings;
+    this.emitEvent({ type: "settings.update", settings });
   }
 
   setArena(info: ArenaInfo | null): void {

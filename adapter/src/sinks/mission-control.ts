@@ -1,3 +1,4 @@
+import { parseSettingsCard, pickSettingsTask, type SettingsTask } from "../settings-card.ts";
 import type { Agent, AgentState, Mission, ServerMessage, Task, TaskStatus } from "../contract.ts";
 import type { World } from "../world.ts";
 
@@ -84,9 +85,42 @@ export class MissionControlSink {
     world.on("message", (m: ServerMessage) => this.enqueue(() => this.onMessage(m)));
     this.enqueue(() => this.registerAgents());
     void this.listen();
+    const pollSettings = () => void this.pollSettings().finally(() => {
+      if (!this.stopped) this.settingsTimer = setTimeout(pollSettings, 5_000);
+    });
+    this.settingsTimer = setTimeout(pollSettings, 1_000);
+  }
+
+  // ---- the settings card (docs/settings.md): the newest Mission Control task whose description
+  // holds a `settings:` block sets the game's settings; a card with mistakes gets one comment. ----
+  private settingsTimer: NodeJS.Timeout | null = null;
+  private settingsVersion = "";
+
+  private async pollSettings(): Promise<void> {
+    if (this.stopped || !this.world) return;
+    let tasks: any[] = [];
+    try {
+      const res = await this.api("GET", "/api/tasks?limit=200");
+      tasks = Array.isArray(res) ? res : res?.tasks ?? [];
+    } catch {
+      return;
+    }
+    const task = pickSettingsTask(tasks as SettingsTask[]);
+    const version = task ? `${task.id}|${task.updated_at}|${task.description}` : "";
+    if (version === this.settingsVersion) return;
+    this.settingsVersion = version;
+    if (!task) return this.world.setSettings(null);
+    const r = parseSettingsCard(task.description ?? "");
+    if (r.ok) {
+      this.world.setSettings(r.settings);
+      this.world.logLine(`Settings from Mission Control task ${task.id} applied.`, "info");
+    } else {
+      await this.comment(task.id, `These settings cannot be applied:\n- ${r.errors.join("\n- ")}\nFix the description; the change is picked up automatically.`).catch(() => {});
+    }
   }
 
   stop(): void {
+    if (this.settingsTimer) clearTimeout(this.settingsTimer);
     if (this.lobbyTimer) clearTimeout(this.lobbyTimer);
     this.lobbyTimer = null;
     this.stopped = true;

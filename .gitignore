@@ -15,3 +15,5 @@ infra/providers.env
 recordings/
 infra/teams/*/api.key
 infra/teams/*/gateway.token
+infra/keys/
+battle-logs/
